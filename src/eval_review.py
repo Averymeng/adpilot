@@ -2,7 +2,7 @@
 eval_review.py : 自测评估（aipm-eval）
 ====================================
 对全部客户的最新一周跑每周复盘，校验：
-  1) 报告含【一句话诊断】+ RACAE 五段齐全
+  1) 报告含【一句话诊断】 + 8 段齐全（总览 / KFS / 漏斗 / 素材 / 人群 / 转化 / 情报 / 行动）
   2) 报告中的关键数字与 DB 一致（防幻觉）
   3) 输出通过率 + 抽样展示
 这是没有真用户 rollout 情况下的"证据"替代（求职作品集可用）。
@@ -34,16 +34,20 @@ def evaluate(db_path: str) -> dict:
 
         checks = []
         checks.append(("diagnosis", bool(r.diagnosis)))
-        checks.append(("section_①", "消耗" in r.overview))
-        checks.append(("section_②", "预算" in r.layout or "ROI" in r.layout))
-        checks.append(("section_③", bool(r.layer_perf)))
-        checks.append(("section_④", "受众" in r.combo_perf and "素材" in r.combo_perf))
-        checks.append(("section_⑤", bool(r.next_actions)))
+        checks.append(("① 总览", bool(r.overview)))
+        checks.append(("② KFS", "信息流" in r.kfs_layout and "搜索" in r.kfs_layout))
+        checks.append(("③ 漏斗", bool(r.funnel_diag)))
+        checks.append(("④ 素材", bool(r.content_perf)))
+        checks.append(("⑤ 人群", bool(r.audience_perf)))
+        checks.append(("⑥ 转化", "浅层" in r.conversion_layer and "深层" in r.conversion_layer))
+        checks.append(("⑦ 情报", bool(r.competitor_intel)))
+        checks.append(("⑧ 行动", bool(r.next_actions)))
         # 数字一致性：报告里应出现本周消耗（整数）数字
         cur = dbm.get_ads(conn, cid, period)
         spend = sum(a.spend for a in cur)
         spend_str = f"{int(round(spend)):,}"
-        checks.append(("number_consistent", spend_str in r.render()))
+        render = r.render()
+        checks.append(("number_consistent", spend_str in render))
 
         ok = all(v for _, v in checks)
         if ok:

@@ -8,6 +8,12 @@ schema.py : 5 张「最小公共 schema」的统一定义（B 方案核心）。
 - 每个平台 / 系统通过一个 adapter 把各自的"原生字段"翻译成下面的统一字段。
 - 以后接新平台，只新增一个 adapter，AI 代码零改动。
 
+字段命名升级（基于真实小红书 / 信息流广告投放逻辑）：
+- ad_type: 投放位置（信息流 / 搜索）—— 小红书 KFS 框架的 F 和 S
+- bid_type: 出价类型（手动 / 自动 / oCPC）
+- cv_shallow / cv_deep: 浅层转化（私信/留资）vs 深层转化（下单/成交）
+- 内容侧：爆文标记 / 互动率（笔记自然流量反哺）
+
 （用标准库 dataclasses，零第三方依赖，保证可移植运行。）
 """
 from dataclasses import dataclass, field
@@ -41,14 +47,19 @@ class AdPerformance:
     impressions: int
     clicks: int
     spend: float
-    conversions: int
+    conversions: int          # 总转化（=浅层+深层）
     gmv: float
     ctr: float
     cvr: float
     cpc: float
     roi: float
-    audience_segment: str     # 受众定向
+    audience_segment: str     # 受众定向（人群包 / 关键词定向 / 行为兴趣 / 智能定向）
     content_id: str           # 外键 -> ContentItem
+    # —— 升级字段（基于小红书真实复盘维度）——
+    ad_type: str = ""         # 投放位置：信息流 / 搜索（小红书特有；其他平台留空）
+    bid_type: str = ""        # 出价类型：手动出价 / 自动出价 / oCPC
+    cv_shallow: int = 0       # 浅层转化（私信/留资/加粉）
+    cv_deep: int = 0          # 深层转化（下单/成交）
 
 
 @dataclass
@@ -63,7 +74,7 @@ class ContentItem:
     cta: str
     landing_link: str
     publish_time: str
-    key_metrics: Dict[str, Any]  # 平台特有的扩展指标（阅读/点赞/完播...）
+    key_metrics: Dict[str, Any]  # 平台特有的扩展指标（阅读/点赞/完播/爆文/互动率）
 
 
 @dataclass
@@ -92,6 +103,7 @@ class IndustryBenchmark:
     avg_cpm: float
     benchmark_roi: float
     trend: str                # up / down / flat
+    ad_type: str = ""         # 信息流 / 搜索（小红书分两条）
 
 
 SCHEMA_MODELS = {

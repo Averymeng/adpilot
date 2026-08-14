@@ -70,6 +70,8 @@ class XhsNoteAdapter(BaseAdapter):
             key_metrics={
                 "reads": r["read_cnt"], "likes": r["like_cnt"],
                 "collects": r["collect_cnt"], "comments": r["comment_cnt"],
+                "is_hot": r.get("is_hot", "常文"),
+                "engage_rate": r.get("engage_rate", 0),
             },
         )
 
@@ -86,7 +88,8 @@ class XhsNoteAdapter(BaseAdapter):
 # 3) 投放成效适配器（4 个平台，字段名各不相同）
 # ---------------------------------------------------------------------------
 def _common_ad(record_id, customer_id, platform, campaign_id, ad_group_id,
-               period, impress, clicks, spend, conv, gmv, audience, content_id):
+               period, impress, clicks, spend, conv, gmv, audience, content_id,
+               ad_type="", bid_type="", cv_shallow=0, cv_deep=0):
     ctr = round(clicks / impress, 4) if impress else 0.0
     cvr = round(conv / clicks, 4) if clicks else 0.0
     cpc = round(spend / clicks, 2) if clicks else 0.0
@@ -97,6 +100,8 @@ def _common_ad(record_id, customer_id, platform, campaign_id, ad_group_id,
         impressions=impress, clicks=clicks, spend=spend, conversions=conv,
         gmv=gmv, ctr=ctr, cvr=cvr, cpc=cpc, roi=roi,
         audience_segment=audience, content_id=content_id,
+        ad_type=ad_type, bid_type=bid_type,
+        cv_shallow=cv_shallow, cv_deep=cv_deep,
     )
 
 
@@ -106,11 +111,13 @@ class XhsAdAdapter(BaseAdapter):
 
     @classmethod
     def normalize(cls, r):
-        # 原生: ad_id / plan_name / note_bind / impress / click / cost / order_cnt / gmv_amt
+        # 原生: ad_id / plan_name / note_bind / impress / click / cost / cv_shallow / cv_deep / gmv_amt / ad_type / bid_type
         return _common_ad(r["ad_id"], _cid(r["ad_id"]), "xhs", r["plan_name"],
                           r["ad_id"], r["week"], r["impress"], r["click"],
-                          r["cost"], r["order_cnt"], r["gmv_amt"], r["audience"],
-                          r["note_bind"])
+                          r["cost"], r["cv_shallow"] + r["cv_deep"], r["gmv_amt"], r["audience"],
+                          r["note_bind"],
+                          ad_type=r.get("ad_type", ""), bid_type=r.get("bid_type", ""),
+                          cv_shallow=r.get("cv_shallow", 0), cv_deep=r.get("cv_deep", 0))
 
 
 class DouyinAdAdapter(BaseAdapter):
@@ -119,11 +126,12 @@ class DouyinAdAdapter(BaseAdapter):
 
     @classmethod
     def normalize(cls, r):
-        # 原生: vid_id / ad_name / video_bind / show / engage / spend / pay_cnt / pay_gmv
         return _common_ad(r["vid_id"], _cid(r["vid_id"]), "douyin", r["ad_name"],
                           r["vid_id"], r["week"], r["show"], r["engage"],
-                          r["spend"], r["pay_cnt"], r["pay_gmv"], r["crowd"],
-                          r["video_bind"])
+                          r["spend"], r["cv_shallow"] + r["cv_deep"], r["pay_gmv"], r["crowd"],
+                          r["video_bind"],
+                          bid_type=r.get("bid_type", ""),
+                          cv_shallow=r.get("cv_shallow", 0), cv_deep=r.get("cv_deep", 0))
 
 
 class TencentAdAdapter(BaseAdapter):
@@ -132,11 +140,12 @@ class TencentAdAdapter(BaseAdapter):
 
     @classmethod
     def normalize(cls, r):
-        # 原生: cid / campaign / creative_id / exposure / click_num / cost / conv / revenue
         return _common_ad(r["cid"], _cid(r["cid"]), "tencent", r["campaign"],
                           r["cid"], r["week"], r["exposure"], r["click_num"],
-                          r["cost"], r["conv"], r["revenue"], r["target"],
-                          r["creative_id"])
+                          r["cost"], r["cv_shallow"] + r["cv_deep"], r["revenue"], r["target"],
+                          r["creative_id"],
+                          bid_type=r.get("bid_type", ""),
+                          cv_shallow=r.get("cv_shallow", 0), cv_deep=r.get("cv_deep", 0))
 
 
 class KuaishouAdAdapter(BaseAdapter):
@@ -145,11 +154,12 @@ class KuaishouAdAdapter(BaseAdapter):
 
     @classmethod
     def normalize(cls, r):
-        # 原生（中文键）: adid / plan / photo_id / disp / clk / 消耗 / cv / gmv / 人群 / 周
         return _common_ad(r["adid"], _cid(r["adid"]), "kuaishou", r["plan"],
                           r["adid"], r["周"], r["disp"], r["clk"],
-                          r["消耗"], r["cv"], r["gmv"], r["人群"],
-                          r["photo_id"])
+                          r["消耗"], r["cv_浅层"] + r["cv_深层"], r["gmv"], r["人群"],
+                          r["photo_id"],
+                          bid_type=r.get("出价方式", ""),
+                          cv_shallow=r.get("cv_浅层", 0), cv_deep=r.get("cv_深层", 0))
 
 
 # 从 record_id（形如 XAD_C001_2026-W32_0）里提取 customer_id
@@ -191,6 +201,7 @@ class IndustryDataAdapter(BaseAdapter):
             benchmark_id=r["bid"], platform=r["platform"], industry=r["industry"],
             period=r["week"], avg_ctr=r["ctr"], avg_cvr=r["cvr"],
             avg_cpm=r["cpm"], benchmark_roi=r["roi"], trend=r["trend"],
+            ad_type=r.get("ad_type") or "",
         )
 
 

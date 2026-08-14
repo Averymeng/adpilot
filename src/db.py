@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS ads (
     record_id TEXT PRIMARY KEY, customer_id TEXT, platform TEXT, campaign_id TEXT,
     ad_group_id TEXT, period TEXT, impressions INTEGER, clicks INTEGER,
     spend REAL, conversions INTEGER, gmv REAL, ctr REAL, cvr REAL, cpc REAL,
-    roi REAL, audience_segment TEXT, content_id TEXT
+    roi REAL, audience_segment TEXT, content_id TEXT,
+    ad_type TEXT, bid_type TEXT, cv_shallow INTEGER, cv_deep INTEGER
 );
 CREATE TABLE IF NOT EXISTS contents (
     content_id TEXT PRIMARY KEY, platform TEXT, format TEXT, title TEXT,
@@ -39,7 +40,8 @@ CREATE TABLE IF NOT EXISTS comms (
 );
 CREATE TABLE IF NOT EXISTS benchmarks (
     benchmark_id TEXT PRIMARY KEY, platform TEXT, industry TEXT, period TEXT,
-    avg_ctr REAL, avg_cvr REAL, avg_cpm REAL, benchmark_roi REAL, trend TEXT
+    avg_ctr REAL, avg_cvr REAL, avg_cpm REAL, benchmark_roi REAL, trend TEXT,
+    ad_type TEXT
 );
 """
 
@@ -66,11 +68,12 @@ def load_from_store(conn: sqlite3.Connection, store: Dict[str, list]) -> None:
 
     for Adapter in (XhsAdAdapter, DouyinAdAdapter, TencentAdAdapter, KuaishouAdAdapter):
         for a in Adapter.fetch(store):
-            cur.execute("INSERT OR REPLACE INTO ads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            cur.execute("INSERT OR REPLACE INTO ads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         [a.record_id, a.customer_id, a.platform, a.campaign_id,
                          a.ad_group_id, a.period, a.impressions, a.clicks, a.spend,
                          a.conversions, a.gmv, a.ctr, a.cvr, a.cpc, a.roi,
-                         a.audience_segment, a.content_id])
+                         a.audience_segment, a.content_id,
+                         a.ad_type, a.bid_type, a.cv_shallow, a.cv_deep])
 
     for c in XhsNoteAdapter.fetch(store):
         cur.execute("INSERT OR REPLACE INTO contents VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -84,9 +87,10 @@ def load_from_store(conn: sqlite3.Connection, store: Dict[str, list]) -> None:
                      m.timestamp, m.text, m.media_type, m.intent_tag, m.sentiment])
 
     for b in IndustryDataAdapter.fetch(store):
-        cur.execute("INSERT OR REPLACE INTO benchmarks VALUES (?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT OR REPLACE INTO benchmarks VALUES (?,?,?,?,?,?,?,?,?,?)",
                     [b.benchmark_id, b.platform, b.industry, b.period,
-                     b.avg_ctr, b.avg_cvr, b.avg_cpm, b.benchmark_roi, b.trend])
+                     b.avg_ctr, b.avg_cvr, b.avg_cpm, b.benchmark_roi, b.trend,
+                     b.ad_type])
     conn.commit()
 
 
@@ -116,7 +120,18 @@ def get_contents(conn, content_ids: set) -> List[ContentItem]:
     q = f"SELECT * FROM contents WHERE content_id IN ({','.join('?'*len(content_ids))})"
     rows = conn.execute(q, list(content_ids)).fetchall()
     cols = [d[0] for d in conn.execute("SELECT * FROM contents").description]
-    return [ContentItem(**dict(zip(cols, r))) for r in rows]
+    items = []
+    for r in rows:
+        d = dict(zip(cols, r))
+        # key_metrics 在 DB 里存的是字符串，还原回 dict
+        if isinstance(d.get("key_metrics"), str):
+            import ast
+            try:
+                d["key_metrics"] = ast.literal_eval(d["key_metrics"])
+            except (ValueError, SyntaxError):
+                d["key_metrics"] = {}
+        items.append(ContentItem(**d))
+    return items
 
 
 def get_comms(conn, customer_id: str, period: Optional[str] = None) -> List[CommunicationRecord]:
