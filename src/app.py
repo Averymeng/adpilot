@@ -21,15 +21,11 @@ from weekly_review import (run_weekly_review, compute_aggregates, STAGE_CN,
 from llm import get_llm
 
 
-# ---------- 隐藏 Streamlit 自带英文 UI（其文字写死英文，无法汉化）----------
-HIDE_CHROME_CSS = """
+# ---------- 极简 CSS：保留所有 Streamlit 原生 UI（侧边栏/工具栏），
+#              只把英文页脚藏掉（中文版不需要它）----------
+HIDE_FOOTER_CSS = """
 <style>
-#MainMenu {visibility: hidden;}
-header[data-testid="stHeader"] {display: none;}
 footer {visibility: hidden;}
-[data-testid="stToolbar"] {visibility: hidden;}
-[data-testid="stDecoration"] {display: none;}
-[data-testid="stStatusWidget"] {visibility: hidden;}
 </style>
 """
 
@@ -112,8 +108,9 @@ def _overview_table(conn, weeks, filter_industry=None, filter_tier=None, filter_
 
 
 def main():
-    st.set_page_config(page_title="AdPilot · 投放复盘", page_icon="📊", layout="wide")
-    st.markdown(HIDE_CHROME_CSS, unsafe_allow_html=True)
+    st.set_page_config(page_title="AdPilot · 投放复盘", page_icon="📊", layout="wide",
+                       initial_sidebar_state="expanded")
+    st.markdown(HIDE_FOOTER_CSS, unsafe_allow_html=True)
 
     conn = get_conn()
     llm = get_llm()
