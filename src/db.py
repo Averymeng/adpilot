@@ -8,7 +8,7 @@ import sqlite3
 from typing import Dict, List, Optional
 from schema import (
     CustomerProfile, AdPerformance, ContentItem,
-    CommunicationRecord, IndustryBenchmark,
+    CommunicationRecord, IndustryBenchmark, Demographics,
 )
 from adapters import (
     CustomerAdapter, XhsAdAdapter, DouyinAdAdapter,
@@ -25,11 +25,9 @@ CREATE TABLE IF NOT EXISTS customers (
 CREATE TABLE IF NOT EXISTS ads (
     record_id TEXT PRIMARY KEY, customer_id TEXT, platform TEXT, campaign_id TEXT,
     ad_group_id TEXT, period TEXT, impressions INTEGER, clicks INTEGER,
-    spend REAL, conversions INTEGER, gmv REAL, ctr REAL, cvr REAL, cpc REAL,
-    roi REAL, audience_segment TEXT, content_id TEXT,
-    ad_type TEXT, bid_type TEXT, cv_shallow INTEGER, cv_deep INTEGER,
-    content_subtype TEXT, pm_inquiry INTEGER, pm_lead INTEGER,
-    pm_deep INTEGER, store_visit INTEGER
+    cash_spend REAL, budget_spend REAL, gmv REAL, ctr REAL, cpc REAL, roi REAL,
+    pm_consult INTEGER, pm_open INTEGER, pm_lead INTEGER, pm_wechat INTEGER,
+    ad_type TEXT, bid_type TEXT, audience_segment TEXT, content_id TEXT
 );
 CREATE TABLE IF NOT EXISTS contents (
     content_id TEXT PRIMARY KEY, platform TEXT, format TEXT, title TEXT,
@@ -42,8 +40,14 @@ CREATE TABLE IF NOT EXISTS comms (
 );
 CREATE TABLE IF NOT EXISTS benchmarks (
     benchmark_id TEXT PRIMARY KEY, platform TEXT, industry TEXT, period TEXT,
-    avg_ctr REAL, avg_cvr REAL, avg_cpm REAL, benchmark_roi REAL, trend TEXT,
-    ad_type TEXT
+    avg_ctr REAL, avg_cvr REAL, avg_cpm REAL, benchmark_roi REAL,
+    benchmark_cpl REAL, trend TEXT, ad_type TEXT
+);
+CREATE TABLE IF NOT EXISTS demographics (
+    customer_id TEXT, period TEXT,
+    age_25_30 REAL, age_31_40 REAL, age_41_50 REAL, age_50_plus REAL,
+    top_region TEXT, top_interest TEXT,
+    PRIMARY KEY (customer_id, period)
 );
 """
 
@@ -59,7 +63,7 @@ def load_from_store(conn: sqlite3.Connection, store: Dict[str, list]) -> None:
     """用 8 个 adapter 把原始 store 归一化后写入 SQLite。"""
     cur = conn.cursor()
     # 清空（保证可重复加载）
-    for t in ("customers", "ads", "contents", "comms", "benchmarks"):
+    for t in ("customers", "ads", "contents", "comms", "benchmarks", "demographics"):
         cur.execute(f"DELETE FROM {t}")
 
     for cust in CustomerAdapter.fetch(store):
@@ -70,14 +74,12 @@ def load_from_store(conn: sqlite3.Connection, store: Dict[str, list]) -> None:
 
     for Adapter in (XhsAdAdapter, DouyinAdAdapter, TencentAdAdapter, KuaishouAdAdapter):
         for a in Adapter.fetch(store):
-            cur.execute("INSERT OR REPLACE INTO ads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            cur.execute("INSERT OR REPLACE INTO ads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         [a.record_id, a.customer_id, a.platform, a.campaign_id,
-                         a.ad_group_id, a.period, a.impressions, a.clicks, a.spend,
-                         a.conversions, a.gmv, a.ctr, a.cvr, a.cpc, a.roi,
-                         a.audience_segment, a.content_id,
-                         a.ad_type, a.bid_type, a.cv_shallow, a.cv_deep,
-                         a.content_subtype, a.pm_inquiry, a.pm_lead,
-                         a.pm_deep, a.store_visit])
+                         a.ad_group_id, a.period, a.impressions, a.clicks,
+                         a.cash_spend, a.budget_spend, a.gmv, a.ctr, a.cpc, a.roi,
+                         a.pm_consult, a.pm_open, a.pm_lead, a.pm_wechat,
+                         a.ad_type, a.bid_type, a.audience_segment, a.content_id])
 
     for c in XhsNoteAdapter.fetch(store):
         cur.execute("INSERT OR REPLACE INTO contents VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -91,10 +93,17 @@ def load_from_store(conn: sqlite3.Connection, store: Dict[str, list]) -> None:
                      m.timestamp, m.text, m.media_type, m.intent_tag, m.sentiment])
 
     for b in IndustryDataAdapter.fetch(store):
-        cur.execute("INSERT OR REPLACE INTO benchmarks VALUES (?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT OR REPLACE INTO benchmarks VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     [b.benchmark_id, b.platform, b.industry, b.period,
-                     b.avg_ctr, b.avg_cvr, b.avg_cpm, b.benchmark_roi, b.trend,
-                     b.ad_type])
+                     b.avg_ctr, b.avg_cvr, b.avg_cpm, b.benchmark_roi,
+                     b.benchmark_cpl, b.trend, b.ad_type])
+
+    for d in store.get("demographics", []):
+        cur.execute("INSERT OR REPLACE INTO demographics VALUES (?,?,?,?,?,?,?,?)",
+                    [d["customer_id"], d["period"], d.get("age_25_30", 0),
+                     d.get("age_31_40", 0), d.get("age_41_50", 0),
+                     d.get("age_50_plus", 0), d.get("top_region", ""),
+                     d.get("top_interest", "")])
     conn.commit()
 
 

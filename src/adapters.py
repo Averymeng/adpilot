@@ -92,23 +92,20 @@ class XhsNoteAdapter(BaseAdapter):
 # 3) 投放成效适配器（4 个平台，字段名各不相同）
 # ---------------------------------------------------------------------------
 def _common_ad(record_id, customer_id, platform, campaign_id, ad_group_id,
-               period, impress, clicks, spend, conv, gmv, audience, content_id,
-               ad_type="", bid_type="", cv_shallow=0, cv_deep=0,
-               content_subtype="", pm_inquiry=0, pm_lead=0, pm_deep=0, store_visit=0):
+               period, impress, clicks, cash_spend, budget_spend, gmv,
+               audience, content_id, ad_type="", bid_type="",
+               pm_consult=0, pm_open=0, pm_lead=0, pm_wechat=0):
     ctr = round(clicks / impress, 4) if impress else 0.0
-    cvr = round(conv / clicks, 4) if clicks else 0.0
-    cpc = round(spend / clicks, 2) if clicks else 0.0
-    roi = round(gmv / spend, 2) if spend else 0.0
+    cpc = round(cash_spend / clicks, 2) if clicks else 0.0
+    roi = round(gmv / cash_spend, 2) if cash_spend else 0.0
     return AdPerformance(
         record_id=record_id, customer_id=customer_id, platform=platform,
         campaign_id=campaign_id, ad_group_id=ad_group_id, period=period,
-        impressions=impress, clicks=clicks, spend=spend, conversions=conv,
-        gmv=gmv, ctr=ctr, cvr=cvr, cpc=cpc, roi=roi,
-        audience_segment=audience, content_id=content_id,
+        impressions=impress, clicks=clicks, cash_spend=cash_spend,
+        budget_spend=budget_spend, gmv=gmv, ctr=ctr, cpc=cpc, roi=roi,
+        pm_consult=pm_consult, pm_open=pm_open, pm_lead=pm_lead, pm_wechat=pm_wechat,
         ad_type=ad_type, bid_type=bid_type,
-        cv_shallow=cv_shallow, cv_deep=cv_deep,
-        content_subtype=content_subtype,
-        pm_inquiry=pm_inquiry, pm_lead=pm_lead, pm_deep=pm_deep, store_visit=store_visit,
+        audience_segment=audience, content_id=content_id,
     )
 
 
@@ -118,18 +115,16 @@ class XhsAdAdapter(BaseAdapter):
 
     @classmethod
     def normalize(cls, r):
-        # 原生: ad_id / plan_name / note_bind / impress / click / cost /
-        #       cv_shallow / cv_deep / gmv_amt / ad_type / bid_type /
-        #       content_subtype / pm_inquiry / pm_lead / pm_deep / store_visit
+        # 原生(线索经营口径): ad_id / plan_name / note_bind / week / impress / click /
+        #       cash_cost / budget_cost / gmv_amt / audience / ad_type / bid_type /
+        #       pm_consult / pm_open / pm_lead / pm_wechat
         return _common_ad(r["ad_id"], _cid(r["ad_id"]), "xhs", r["plan_name"],
                           r["ad_id"], r["week"], r["impress"], r["click"],
-                          r["cost"], r["cv_shallow"] + r["cv_deep"], r["gmv_amt"], r["audience"],
+                          r["cash_cost"], r["budget_cost"], r["gmv_amt"], r["audience"],
                           r["note_bind"],
                           ad_type=r.get("ad_type", ""), bid_type=r.get("bid_type", ""),
-                          cv_shallow=r.get("cv_shallow", 0), cv_deep=r.get("cv_deep", 0),
-                          content_subtype=r.get("content_subtype", ""),
-                          pm_inquiry=r.get("pm_inquiry", 0), pm_lead=r.get("pm_lead", 0),
-                          pm_deep=r.get("pm_deep", 0), store_visit=r.get("store_visit", 0))
+                          pm_consult=r.get("pm_consult", 0), pm_open=r.get("pm_open", 0),
+                          pm_lead=r.get("pm_lead", 0), pm_wechat=r.get("pm_wechat", 0))
 
 
 class DouyinAdAdapter(BaseAdapter):
@@ -140,10 +135,11 @@ class DouyinAdAdapter(BaseAdapter):
     def normalize(cls, r):
         return _common_ad(r["vid_id"], _cid(r["vid_id"]), "douyin", r["ad_name"],
                           r["vid_id"], r["week"], r["show"], r["engage"],
-                          r["spend"], r["cv_shallow"] + r["cv_deep"], r["pay_gmv"], r["crowd"],
+                          r["cash_cost"], r["budget_cost"], r["pay_gmv"], r["crowd"],
                           r["video_bind"],
                           bid_type=r.get("bid_type", ""),
-                          cv_shallow=r.get("cv_shallow", 0), cv_deep=r.get("cv_deep", 0))
+                          pm_consult=r.get("pm_consult", 0), pm_open=r.get("pm_open", 0),
+                          pm_lead=r.get("pm_lead", 0), pm_wechat=r.get("pm_wechat", 0))
 
 
 class TencentAdAdapter(BaseAdapter):
@@ -154,10 +150,11 @@ class TencentAdAdapter(BaseAdapter):
     def normalize(cls, r):
         return _common_ad(r["cid"], _cid(r["cid"]), "tencent", r["campaign"],
                           r["cid"], r["week"], r["exposure"], r["click_num"],
-                          r["cost"], r["cv_shallow"] + r["cv_deep"], r["revenue"], r["target"],
+                          r["cash_cost"], r["budget_cost"], r["revenue"], r["target"],
                           r["creative_id"],
                           bid_type=r.get("bid_type", ""),
-                          cv_shallow=r.get("cv_shallow", 0), cv_deep=r.get("cv_deep", 0))
+                          pm_consult=r.get("pm_consult", 0), pm_open=r.get("pm_open", 0),
+                          pm_lead=r.get("pm_lead", 0), pm_wechat=r.get("pm_wechat", 0))
 
 
 class KuaishouAdAdapter(BaseAdapter):
@@ -168,10 +165,11 @@ class KuaishouAdAdapter(BaseAdapter):
     def normalize(cls, r):
         return _common_ad(r["adid"], _cid(r["adid"]), "kuaishou", r["plan"],
                           r["adid"], r["周"], r["disp"], r["clk"],
-                          r["消耗"], r["cv_浅层"] + r["cv_深层"], r["gmv"], r["人群"],
+                          r["cash_cost"], r["budget_cost"], r["gmv"], r["人群"],
                           r["photo_id"],
                           bid_type=r.get("出价方式", ""),
-                          cv_shallow=r.get("cv_浅层", 0), cv_deep=r.get("cv_深层", 0))
+                          pm_consult=r.get("pm_consult", 0), pm_open=r.get("pm_open", 0),
+                          pm_lead=r.get("pm_lead", 0), pm_wechat=r.get("pm_wechat", 0))
 
 
 # 从 record_id（形如 XAD_C001_2026-W32_0）里提取 customer_id
@@ -212,7 +210,8 @@ class IndustryDataAdapter(BaseAdapter):
         return IndustryBenchmark(
             benchmark_id=r["bid"], platform=r["platform"], industry=r["industry"],
             period=r["week"], avg_ctr=r["ctr"], avg_cvr=r["cvr"],
-            avg_cpm=r["cpm"], benchmark_roi=r["roi"], trend=r["trend"],
+            avg_cpm=r["cpm"], benchmark_roi=r["roi"],
+            benchmark_cpl=r.get("cpl", 0.0), trend=r["trend"],
             ad_type=r.get("ad_type") or "",
         )
 

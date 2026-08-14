@@ -2,8 +2,8 @@
 eval_review.py : 自测评估（aipm-eval）
 ====================================
 对全部客户的最新一周跑每周复盘，校验：
-  1) 报告含【一句话诊断】 + 8 段齐全（v7 框架：总览/私信漏斗/KFS/内容类型/素材+笔记/漏斗+人群/口碑+竞争/行动）
-  2) 报告中的关键数字与 DB 一致（防幻觉）
+  1) 报告含【一句话诊断】 + 8 段齐全（v8 线索经营框架）
+  2) 报告中的关键数字与 DB 一致（防幻觉）：留资数 / 留资成本 CPL / 现金消耗
   3) 输出通过率 + 抽样展示
 """
 import sqlite3
@@ -31,27 +31,32 @@ def evaluate(db_path: str) -> dict:
             failures.append((cid, f"exception: {e}"))
             continue
 
+        render = r.render()
+        cur_ads = dbm.get_ads(conn, cid, period)
+        home_cash = sum(a.cash_spend for a in cur_ads if a.platform == "xhs")
+        home_lead = sum(a.pm_lead for a in cur_ads if a.platform == "xhs")
+        db_cpl = round(home_cash / home_lead, 1) if home_lead else 0
+
         checks = []
         checks.append(("diagnosis", bool(r.diagnosis)))
         checks.append(("① 总览", bool(r.overview)))
-        checks.append(("② 私信漏斗", "私信开口" in r.pm_funnel and "私信深度" in r.pm_funnel))
-        checks.append(("③ KFS", "信息流" in r.kfs_layout and "搜索" in r.kfs_layout))
-        checks.append(("④ 内容类型", "效果-外链营销通" in r.content_type_perf
-                                  or "效果-落地页" in r.content_type_perf
-                                  or "内容-外链营销通" in r.content_type_perf
-                                  or "内容-种草达人合作" in r.content_type_perf))
-        checks.append(("⑤ 素材+笔记", bool(r.creative_note) and "笔记" in r.creative_note))
-        checks.append(("⑥ 漏斗+人群", bool(r.funnel_audience)
-                                  and "人群" in r.funnel_audience))
-        checks.append(("⑦ 口碑+竞争", "好评率" in r.reputation_competitor
-                                  and "私信打开率" in r.reputation_competitor))
+        checks.append(("② 私信漏斗", "私信开口" in r.pm_funnel
+                                  and "私信留资" in r.pm_funnel
+                                  and "添加微信" in r.pm_funnel))
+        checks.append(("③ 出价预算", "预算花完率" in r.bid_budget
+                                   and ("信息流" in r.bid_budget and "搜索" in r.bid_budget)))
+        checks.append(("④ 人群地域", bool(r.audience_geo) and "年龄" in r.audience_geo))
+        checks.append(("⑤ 素材线索", "素材四象限" in r.content_lead
+                                    or "CTR" in r.content_lead))
+        checks.append(("⑥ 话术承接", "开口率" in r.script and "加微率" in r.script))
+        checks.append(("⑦ 行业对标", "行业 CPL 基准" in r.benchmark_comp))
         checks.append(("⑧ 行动", bool(r.next_actions)))
-        # 数字一致性：报告里应出现本周消耗（整数）数字
-        cur = dbm.get_ads(conn, cid, period)
-        spend = sum(a.spend for a in cur)
-        spend_str = f"{int(round(spend)):,}"
-        render = r.render()
-        checks.append(("number_consistent", spend_str in render))
+        # 数字一致性：CPL 与 DB 自洽
+        checks.append(("cpl_consistent",
+                       f"¥{r.cpl:.0f}" in render or f"¥{int(r.cpl)}" in render))
+        checks.append(("lead_consistent", str(home_lead) in render))
+        # CPL 与 DB 误差 < 1 元
+        checks.append(("cpl_match_db", abs(r.cpl - db_cpl) < 1.0))
 
         ok = all(v for _, v in checks)
         if ok:
