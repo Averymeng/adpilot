@@ -42,6 +42,8 @@ BRANDS = {
 # 小红书特有的"投放位置"分类：信息流 F vs 搜索 S（KFS 框架中的 F 和 S）
 # K (达人种草) 不计入 ad 投放表，只走笔记
 XHS_AD_TYPES = ["信息流", "搜索"]
+# 内容类型（蒲公英后台口径）：4 种，按用途 × 链接类型划分
+XHS_CONTENT_SUBTYPES = ["效果-外链营销通", "效果-落地页", "内容-外链营销通", "内容-种草达人合作"]
 # 出价类型
 BID_TYPES = ["手动出价", "自动出价", "oCPC"]
 # 受众四细分（真实小红书后台：人群包 / 关键词定向 / 行为兴趣 / 智能定向）
@@ -115,9 +117,11 @@ def generate_raw_dataset(seed: int = 42) -> Dict[str, List[Dict[str, Any]]]:
             like = int(reads * rnd.uniform(0.03, 0.12))
             collect = int(reads * rnd.uniform(0.01, 0.05))
             comment = int(reads * rnd.uniform(0.005, 0.02))
+            share = int(reads * rnd.uniform(0.005, 0.025))
             # 爆文率判定：阅读 ≥ 50k 且互动率 ≥ 5% → 爆文
-            engage_rate = (like + collect + comment) / reads if reads else 0
+            engage_rate = (like + collect + comment + share) / reads if reads else 0
             is_hot = "爆文" if (reads >= 50000 and engage_rate >= 0.05) else "常文"
+            is_original = rnd.random() < 0.7  # 70% 概率为品牌原创
             raw["xhs_notes"].append({
                 "note_id": note_id,
                 "title": f"{industry}种草笔记#{n} {rnd.choice(['实测','攻略','测评','开箱'])}",
@@ -125,8 +129,10 @@ def generate_raw_dataset(seed: int = 42) -> Dict[str, List[Dict[str, Any]]]:
                 "cover": f"https://cdn.example.com/{note_id}.jpg",
                 "jump_link": f"https://xhs.example.com/note/{note_id}",
                 "publish_date": f"2026-{rnd.randint(5,8):02d}-{rnd.randint(1,28):02d}",
-                "read_cnt": reads, "like_cnt": like, "collect_cnt": collect, "comment_cnt": comment,
-                "is_hot": is_hot, "engage_rate": _round(engage_rate, 4),
+                "read_cnt": reads, "like_cnt": like, "collect_cnt": collect,
+                "comment_cnt": comment, "share_cnt": share,
+                "is_hot": is_hot, "is_original": is_original,
+                "engage_rate": _round(engage_rate, 4),
             })
 
         # —— 各平台投放：每客户×平台固定计划数（保证周环比由设计走势主导）——
@@ -158,6 +164,14 @@ def generate_raw_dataset(seed: int = 42) -> Dict[str, List[Dict[str, Any]]]:
                     if p == "xhs":
                         # 小红书特有：信息流 vs 搜索（KFS 框架）
                         ad_type = rnd.choice(XHS_AD_TYPES)
+                        content_subtype = rnd.choice(XHS_CONTENT_SUBTYPES)
+                        # 蒲公英 5 段私信漏斗：消耗 → 开口 → 留资 → 深度(企微/咨询) → 进店
+                        # at_risk 客户整体漏斗效率偏低，制造可诊断信号
+                        pm_decay = 0.55 if persona == "at_risk" else (1.15 if persona == "growing" else 1.0)
+                        pm_inquiry = max(0, int(clicks * rnd.uniform(0.005, 0.025) * pm_decay))
+                        pm_lead = max(0, int(pm_inquiry * rnd.uniform(0.30, 0.60)))
+                        pm_deep = max(0, int(pm_lead * rnd.uniform(0.40, 0.70)))
+                        store_visit = max(0, int(pm_deep * rnd.uniform(0.50, 0.90)))
                         raw["xhs_ads"].append({
                             "ad_id": f"XAD_{cid}_{week}_{c}",
                             "plan_name": f"{industry}{ad_type}_{c}",
@@ -167,6 +181,9 @@ def generate_raw_dataset(seed: int = 42) -> Dict[str, List[Dict[str, Any]]]:
                             "gmv_amt": gmv,
                             "audience": audience, "week": week,
                             "ad_type": ad_type, "bid_type": bid_type,
+                            "content_subtype": content_subtype,
+                            "pm_inquiry": pm_inquiry, "pm_lead": pm_lead,
+                            "pm_deep": pm_deep, "store_visit": store_visit,
                         })
                     elif p == "douyin":
                         raw["douyin_ads"].append({

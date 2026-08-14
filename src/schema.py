@@ -60,6 +60,12 @@ class AdPerformance:
     bid_type: str = ""        # 出价类型：手动出价 / 自动出价 / oCPC
     cv_shallow: int = 0       # 浅层转化（私信/留资/加粉）
     cv_deep: int = 0          # 深层转化（下单/成交）
+    # —— v7 升级字段（蒲公英 5 段私信漏斗 + 内容类型拆解）——
+    content_subtype: str = "" # 内容类型：效果-外链营销通 / 效果-落地页 / 内容-外链营销通 / 内容-种草达人合作
+    pm_inquiry: int = 0       # 私信开口
+    pm_lead: int = 0          # 私信留资
+    pm_deep: int = 0          # 私信深度转化（添加企微 / 内容咨询）
+    store_visit: int = 0      # 进店访问
 
 
 @dataclass
@@ -75,6 +81,9 @@ class ContentItem:
     landing_link: str
     publish_time: str
     key_metrics: Dict[str, Any]  # 平台特有的扩展指标（阅读/点赞/完播/爆文/互动率）
+    # —— v7 升级（笔记活跃度）——
+    is_original: bool = True  # 是否原创
+    share_cnt: int = 0        # 分享次数
 
 
 @dataclass

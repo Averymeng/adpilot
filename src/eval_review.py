@@ -2,10 +2,9 @@
 eval_review.py : 自测评估（aipm-eval）
 ====================================
 对全部客户的最新一周跑每周复盘，校验：
-  1) 报告含【一句话诊断】 + 8 段齐全（总览 / KFS / 漏斗 / 素材 / 人群 / 转化 / 情报 / 行动）
+  1) 报告含【一句话诊断】 + 8 段齐全（v7 框架：总览/私信漏斗/KFS/内容类型/素材+笔记/漏斗+人群/口碑+竞争/行动）
   2) 报告中的关键数字与 DB 一致（防幻觉）
   3) 输出通过率 + 抽样展示
-这是没有真用户 rollout 情况下的"证据"替代（求职作品集可用）。
 """
 import sqlite3
 from typing import List
@@ -35,12 +34,17 @@ def evaluate(db_path: str) -> dict:
         checks = []
         checks.append(("diagnosis", bool(r.diagnosis)))
         checks.append(("① 总览", bool(r.overview)))
-        checks.append(("② KFS", "信息流" in r.kfs_layout and "搜索" in r.kfs_layout))
-        checks.append(("③ 漏斗", bool(r.funnel_diag)))
-        checks.append(("④ 素材", bool(r.content_perf)))
-        checks.append(("⑤ 人群", bool(r.audience_perf)))
-        checks.append(("⑥ 转化", "浅层" in r.conversion_layer and "深层" in r.conversion_layer))
-        checks.append(("⑦ 情报", bool(r.competitor_intel)))
+        checks.append(("② 私信漏斗", "私信开口" in r.pm_funnel and "私信深度" in r.pm_funnel))
+        checks.append(("③ KFS", "信息流" in r.kfs_layout and "搜索" in r.kfs_layout))
+        checks.append(("④ 内容类型", "效果-外链营销通" in r.content_type_perf
+                                  or "效果-落地页" in r.content_type_perf
+                                  or "内容-外链营销通" in r.content_type_perf
+                                  or "内容-种草达人合作" in r.content_type_perf))
+        checks.append(("⑤ 素材+笔记", bool(r.creative_note) and "笔记" in r.creative_note))
+        checks.append(("⑥ 漏斗+人群", bool(r.funnel_audience)
+                                  and "人群" in r.funnel_audience))
+        checks.append(("⑦ 口碑+竞争", "好评率" in r.reputation_competitor
+                                  and "私信打开率" in r.reputation_competitor))
         checks.append(("⑧ 行动", bool(r.next_actions)))
         # 数字一致性：报告里应出现本周消耗（整数）数字
         cur = dbm.get_ads(conn, cid, period)

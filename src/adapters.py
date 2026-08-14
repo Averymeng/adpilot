@@ -70,9 +70,13 @@ class XhsNoteAdapter(BaseAdapter):
             key_metrics={
                 "reads": r["read_cnt"], "likes": r["like_cnt"],
                 "collects": r["collect_cnt"], "comments": r["comment_cnt"],
+                "shares": r.get("share_cnt", 0),
                 "is_hot": r.get("is_hot", "常文"),
+                "is_original": r.get("is_original", True),
                 "engage_rate": r.get("engage_rate", 0),
             },
+            is_original=r.get("is_original", True),
+            share_cnt=r.get("share_cnt", 0),
         )
 
     @classmethod
@@ -89,7 +93,8 @@ class XhsNoteAdapter(BaseAdapter):
 # ---------------------------------------------------------------------------
 def _common_ad(record_id, customer_id, platform, campaign_id, ad_group_id,
                period, impress, clicks, spend, conv, gmv, audience, content_id,
-               ad_type="", bid_type="", cv_shallow=0, cv_deep=0):
+               ad_type="", bid_type="", cv_shallow=0, cv_deep=0,
+               content_subtype="", pm_inquiry=0, pm_lead=0, pm_deep=0, store_visit=0):
     ctr = round(clicks / impress, 4) if impress else 0.0
     cvr = round(conv / clicks, 4) if clicks else 0.0
     cpc = round(spend / clicks, 2) if clicks else 0.0
@@ -102,6 +107,8 @@ def _common_ad(record_id, customer_id, platform, campaign_id, ad_group_id,
         audience_segment=audience, content_id=content_id,
         ad_type=ad_type, bid_type=bid_type,
         cv_shallow=cv_shallow, cv_deep=cv_deep,
+        content_subtype=content_subtype,
+        pm_inquiry=pm_inquiry, pm_lead=pm_lead, pm_deep=pm_deep, store_visit=store_visit,
     )
 
 
@@ -111,13 +118,18 @@ class XhsAdAdapter(BaseAdapter):
 
     @classmethod
     def normalize(cls, r):
-        # 原生: ad_id / plan_name / note_bind / impress / click / cost / cv_shallow / cv_deep / gmv_amt / ad_type / bid_type
+        # 原生: ad_id / plan_name / note_bind / impress / click / cost /
+        #       cv_shallow / cv_deep / gmv_amt / ad_type / bid_type /
+        #       content_subtype / pm_inquiry / pm_lead / pm_deep / store_visit
         return _common_ad(r["ad_id"], _cid(r["ad_id"]), "xhs", r["plan_name"],
                           r["ad_id"], r["week"], r["impress"], r["click"],
                           r["cost"], r["cv_shallow"] + r["cv_deep"], r["gmv_amt"], r["audience"],
                           r["note_bind"],
                           ad_type=r.get("ad_type", ""), bid_type=r.get("bid_type", ""),
-                          cv_shallow=r.get("cv_shallow", 0), cv_deep=r.get("cv_deep", 0))
+                          cv_shallow=r.get("cv_shallow", 0), cv_deep=r.get("cv_deep", 0),
+                          content_subtype=r.get("content_subtype", ""),
+                          pm_inquiry=r.get("pm_inquiry", 0), pm_lead=r.get("pm_lead", 0),
+                          pm_deep=r.get("pm_deep", 0), store_visit=r.get("store_visit", 0))
 
 
 class DouyinAdAdapter(BaseAdapter):

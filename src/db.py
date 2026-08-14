@@ -27,12 +27,14 @@ CREATE TABLE IF NOT EXISTS ads (
     ad_group_id TEXT, period TEXT, impressions INTEGER, clicks INTEGER,
     spend REAL, conversions INTEGER, gmv REAL, ctr REAL, cvr REAL, cpc REAL,
     roi REAL, audience_segment TEXT, content_id TEXT,
-    ad_type TEXT, bid_type TEXT, cv_shallow INTEGER, cv_deep INTEGER
+    ad_type TEXT, bid_type TEXT, cv_shallow INTEGER, cv_deep INTEGER,
+    content_subtype TEXT, pm_inquiry INTEGER, pm_lead INTEGER,
+    pm_deep INTEGER, store_visit INTEGER
 );
 CREATE TABLE IF NOT EXISTS contents (
     content_id TEXT PRIMARY KEY, platform TEXT, format TEXT, title TEXT,
     body_text TEXT, cover_url TEXT, cta TEXT, landing_link TEXT,
-    publish_time TEXT, key_metrics TEXT
+    publish_time TEXT, key_metrics TEXT, is_original INTEGER, share_cnt INTEGER
 );
 CREATE TABLE IF NOT EXISTS comms (
     msg_id TEXT PRIMARY KEY, customer_id TEXT, sender_role TEXT, channel TEXT,
@@ -68,18 +70,20 @@ def load_from_store(conn: sqlite3.Connection, store: Dict[str, list]) -> None:
 
     for Adapter in (XhsAdAdapter, DouyinAdAdapter, TencentAdAdapter, KuaishouAdAdapter):
         for a in Adapter.fetch(store):
-            cur.execute("INSERT OR REPLACE INTO ads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            cur.execute("INSERT OR REPLACE INTO ads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         [a.record_id, a.customer_id, a.platform, a.campaign_id,
                          a.ad_group_id, a.period, a.impressions, a.clicks, a.spend,
                          a.conversions, a.gmv, a.ctr, a.cvr, a.cpc, a.roi,
                          a.audience_segment, a.content_id,
-                         a.ad_type, a.bid_type, a.cv_shallow, a.cv_deep])
+                         a.ad_type, a.bid_type, a.cv_shallow, a.cv_deep,
+                         a.content_subtype, a.pm_inquiry, a.pm_lead,
+                         a.pm_deep, a.store_visit])
 
     for c in XhsNoteAdapter.fetch(store):
-        cur.execute("INSERT OR REPLACE INTO contents VALUES (?,?,?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT OR REPLACE INTO contents VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     [c.content_id, c.platform, c.format, c.title, c.body_text,
                      c.cover_url, c.cta, c.landing_link, c.publish_time,
-                     str(c.key_metrics)])
+                     str(c.key_metrics), int(c.is_original), c.share_cnt])
 
     for m in WeComMessageAdapter.fetch(store):
         cur.execute("INSERT OR REPLACE INTO comms VALUES (?,?,?,?,?,?,?,?,?)",

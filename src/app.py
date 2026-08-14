@@ -12,7 +12,15 @@ UI 改进（按用户反馈）：
 - 客户总览表无外链 / 跳转按钮
 - 负责人全去重（20 个不同姓名）；图表横坐标文字横排
 - 等级（KA/SMB）由「周均本平台（小红书）消耗」阈值判定（数据驱动，与表格口径自洽，可被验证）
-- 复盘结构基于真实小红书 / 信息流投放逻辑：8 段式（总览+KFS+漏斗+素材+人群+转化+情报+行动）
+- 复盘结构 v7（对齐真实小红书蒲公英后台复盘维度）：
+  ① 总览与结论
+  ② 私信转化漏斗（蒲公英核心 5 段：消耗→开口→留资→深度→进店）
+  ③ KFS 投放布局（信息流 vs 搜索 + 出价）
+  ④ 内容类型 × 广告效果（含 CPE / CPM / 计划数 / 素材数 / 笔记数）
+  ⑤ 素材创意占比（饼图）+ 笔记活跃度（新增/原创/评论/分享/赞藏）
+  ⑥ 漏斗诊断（跨周趋势）+ 人群定向（四细分）
+  ⑦ 口碑关键词（好评率/私信打开率/私聊好评占比）+ 竞争媒体情报
+  ⑧ 下一步行动
 """
 import os
 import sys
@@ -241,8 +249,43 @@ def main():
         st.markdown(H3.format(text="① 总览与结论"), unsafe_allow_html=True)
         st.markdown(r.overview)
 
-        # ② KFS 投放布局（信息流 F vs 搜索 S）+ 出价维度
-        st.markdown(H3.format(text="② KFS 投放布局（信息流 vs 搜索）"), unsafe_allow_html=True)
+        # ② 私信转化漏斗（蒲公英核心 5 段：消耗 → 开口 → 留资 → 深度 → 进店）
+        st.markdown(H3.format(text="② 私信转化漏斗（蒲公英 5 段）"), unsafe_allow_html=True)
+        cur = agg_home["cur"]
+        prev = agg_home["prev"]
+        wow = agg_home["wow"]
+        pm_inq, pm_ld, pm_dp, sv = cur["pm_inquiry"], cur["pm_lead"], cur["pm_deep"], cur["store_visit"]
+        p1, p2, p3, p4, p5 = st.columns(5)
+        p1.metric("本平台消耗", f"¥{int(cur['spend']):,}", f"{wow['spend']:+.1f}%")
+        p2.metric("私信开口", f"{pm_inq:,}", f"{wow['pm_inquiry']:+.1f}%")
+        p3.metric("私信留资", f"{pm_ld:,}",
+                  f"留资率 {(pm_ld/pm_inq*100 if pm_inq else 0):.1f}%")
+        p4.metric("私信深度(企微/咨询)", f"{pm_dp:,}",
+                  f"深度率 {(pm_dp/pm_ld*100 if pm_ld else 0):.1f}%")
+        p5.metric("进店访问", f"{sv:,}",
+                  f"进店率 {(sv/pm_dp*100 if pm_dp else 0):.1f}%")
+        # 漏斗柱状图
+        funnel_df = pd.DataFrame([
+            {"阶段": "消耗(¥)", "值": int(cur['spend'])},
+            {"阶段": "开口", "值": pm_inq},
+            {"阶段": "留资", "值": pm_ld},
+            {"阶段": "深度", "值": pm_dp},
+            {"阶段": "进店", "值": sv},
+        ])
+        st.altair_chart(
+            alt.Chart(funnel_df).mark_bar().encode(
+                x=alt.X("阶段:N", title=None, sort=["消耗(¥)", "开口", "留资", "深度", "进店"],
+                        axis=alt.Axis(labelAngle=0)),
+                y=alt.Y("值:Q"),
+                color=alt.Color("阶段:N", scale=alt.Scale(scheme="tealblues"), legend=None),
+                tooltip=["阶段", "值"],
+            ).properties(height=240, title="本平台私信转化漏斗"),
+            use_container_width=True,
+        )
+        st.markdown(r.pm_funnel)
+
+        # ③ KFS 投放布局（信息流 F vs 搜索 S）+ 出价维度
+        st.markdown(H3.format(text="③ KFS 投放布局（信息流 vs 搜索）"), unsafe_allow_html=True)
         kfs_rows = []
         for ad_type in ("信息流", "搜索"):
             d = agg_home["kfs"][ad_type]
@@ -262,9 +305,9 @@ def main():
         if kfs_rows:
             st.dataframe(pd.DataFrame(kfs_rows), use_container_width=True, hide_index=True)
             kfs_chart_df = pd.DataFrame([
-                {"位置": r["KFS 位置"], "类型": k, "值": v}
-                for r in kfs_rows
-                for k, v in [("实际 ROI", r["ROI"]), ("行业基准", r["行业基准 ROI"])]
+                {"位置": rr["KFS 位置"], "类型": k, "值": v}
+                for rr in kfs_rows
+                for k, v in [("实际 ROI", rr["ROI"]), ("行业基准", rr["行业基准 ROI"])]
             ])
             st.altair_chart(
                 alt.Chart(kfs_chart_df).mark_bar().encode(
@@ -276,7 +319,6 @@ def main():
                 ).properties(height=260),
                 use_container_width=True,
             )
-        # 出价类型表
         bid_rows = [{"出价类型": bt,
                      "消耗(¥)": int(d["spend"]),
                      "GMV(¥)": int(d["gmv"]),
@@ -286,30 +328,51 @@ def main():
             st.dataframe(pd.DataFrame(bid_rows), use_container_width=True, hide_index=True)
         st.markdown(r.kfs_layout)
 
-        # ③ 漏斗三段诊断 + 跨周趋势
-        st.markdown(H3.format(text="③ 漏斗三段诊断"), unsafe_allow_html=True)
-        history = _customer_history(conn, cid, weeks, HOME_PLATFORM)
-        if not history.empty:
-            trend_long = history.melt(id_vars=["period"],
-                                      value_vars=["spend", "gmv", "roi"],
-                                      var_name="指标", value_name="值")
+        # ④ 内容类型 × 广告效果（含 CPE）—— 蒲公英口径
+        st.markdown(H3.format(text="④ 内容类型 × 广告效果（含 CPE）"), unsafe_allow_html=True)
+        sub_rows = []
+        sorted_sub = sorted(agg_home["by_subtype"].items(), key=lambda x: -x[1]["spend"])
+        for st_, d in sorted_sub:
+            sub_rows.append({
+                "内容类型": st_,
+                "消耗(¥)": int(d["spend"]),
+                "点击": d["clicks"],
+                "CTR": f"{d['ctr']*100:.2f}%",
+                "CPC(¥)": d["cpc"],
+                "CPM(¥)": d["cpm"],
+                "计划数": d["plan_cnt"],
+                "素材数": d["creative_cnt"],
+                "笔记数": d["note_cnt"],
+            })
+        if sub_rows:
+            st.dataframe(pd.DataFrame(sub_rows), use_container_width=True, hide_index=True)
+        st.markdown(r.content_type_perf)
+
+        # ⑤ 素材创意占比 + 笔记活跃度
+        st.markdown(H3.format(text="⑤ 素材创意占比 + 笔记活跃度"), unsafe_allow_html=True)
+        c1, c2, c3, c4, c5 = st.columns(5)
+        ns = agg_home["note_stats"]
+        c1.metric("新增笔记", f"{ns['total']} 篇")
+        c2.metric("原创占比", f"{(ns['original']/max(ns['total'],1)*100):.1f}%")
+        c3.metric("评论", f"{ns['comments']:,}")
+        c4.metric("分享", f"{ns['shares']:,}")
+        c5.metric("赞藏", f"{ns['likes_collects']:,}")
+        # 创意占比饼图（按计划数）
+        plan_total = sum(d["plan_cnt"] for d in agg_home["by_subtype"].values()) or 1
+        pie_df = pd.DataFrame([
+            {"内容类型": st_, "计划占比(%)": round(d["plan_cnt"]/plan_total*100, 1)}
+            for st_, d in agg_home["by_subtype"].items()
+        ])
+        if not pie_df.empty:
             st.altair_chart(
-                alt.Chart(trend_long).mark_line(point=True).encode(
-                    x=alt.X("period:N", title="周", sort=weeks,
-                            axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y("值:Q"),
-                    color=alt.Color("指标:N", scale=alt.Scale(scheme="category10")),
-                    tooltip=["period", "指标", "值"],
-                ).properties(height=260),
+                alt.Chart(pie_df).mark_arc(innerRadius=60).encode(
+                    theta=alt.Theta("计划占比(%):Q"),
+                    color=alt.Color("内容类型:N", scale=alt.Scale(scheme="set2")),
+                    tooltip=["内容类型", "计划占比(%)"],
+                ).properties(height=240, title="素材创意占比（按计划数）"),
                 use_container_width=True,
             )
-        st.markdown(r.funnel_diag)
-
-        # ④ 素材表现（含爆文率 + 衰减信号）
-        st.markdown(H3.format(text="④ 素材表现（含爆文率 + 衰减信号）"), unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        c1.metric("爆文率", f"{r.burst_rate}%", help="阅读 ≥ 5w 且互动率 ≥ 5% 的笔记占比")
-        c2.metric("笔记平均互动率", f"{r.note_engage_avg}%")
+        # TOP 素材表
         ct_sorted = sorted(agg_home["by_content"].items(), key=lambda x: -x[1]["roi"])
         ct_rows = []
         for cid_, d in ct_sorted:
@@ -328,10 +391,25 @@ def main():
             st.dataframe(pd.DataFrame(ct_rows), use_container_width=True, hide_index=True)
         if r.decay_signal:
             st.warning(f"⚠️ {r.decay_signal}")
-        st.markdown(r.content_perf)
+        st.markdown(r.creative_note)
 
-        # ⑤ 人群定向四细分
-        st.markdown(H3.format(text="⑤ 人群定向（四细分）"), unsafe_allow_html=True)
+        # ⑥ 漏斗诊断 + 人群定向
+        st.markdown(H3.format(text="⑥ 漏斗诊断 + 人群定向"), unsafe_allow_html=True)
+        history = _customer_history(conn, cid, weeks, HOME_PLATFORM)
+        if not history.empty:
+            trend_long = history.melt(id_vars=["period"],
+                                      value_vars=["spend", "gmv", "roi"],
+                                      var_name="指标", value_name="值")
+            st.altair_chart(
+                alt.Chart(trend_long).mark_line(point=True).encode(
+                    x=alt.X("period:N", title="周", sort=weeks,
+                            axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y("值:Q"),
+                    color=alt.Color("指标:N", scale=alt.Scale(scheme="category10")),
+                    tooltip=["period", "指标", "值"],
+                ).properties(height=260),
+                use_container_width=True,
+            )
         aud_sorted = sorted(agg_home["by_audience"].items(), key=lambda x: -x[1]["roi"])
         aud_df = pd.DataFrame([{
             "人群维度": k, "消耗(¥)": int(d["spend"]),
@@ -340,35 +418,19 @@ def main():
         } for k, d in aud_sorted])
         if not aud_df.empty:
             st.dataframe(aud_df, use_container_width=True, hide_index=True)
-        st.markdown(r.audience_perf)
+        st.markdown(r.funnel_audience)
 
-        # ⑥ 转化分层
-        st.markdown(H3.format(text="⑥ 转化分层（浅层 vs 深层）"), unsafe_allow_html=True)
-        cv_s = cur["cv_shallow"]; cv_d = cur["cv_deep"]; cv_t = cv_s + cv_d
-        sh_pct = round(cv_s / cv_t * 100, 1) if cv_t else 0
-        de_pct = round(cv_d / cv_t * 100, 1) if cv_t else 0
+        # ⑦ 口碑关键词 + 竞争媒体情报
+        st.markdown(H3.format(text="⑦ 口碑关键词 + 竞争媒体情报"), unsafe_allow_html=True)
+        rep = agg_home["rep_stats"]
         k1, k2, k3 = st.columns(3)
-        k1.metric("浅层转化（私信/留资）", f"{cv_s} 条", f"{sh_pct}%" if cv_t else "")
-        k2.metric("深层转化（下单/成交）", f"{cv_d} 条", f"{de_pct}%" if cv_t else "")
-        k3.metric("GMV（仅深层贡献）", f"¥{int(cur['gmv']):,}")
-        # 分层堆叠图
-        layer_df = pd.DataFrame([
-            {"类型": "浅层", "数": cv_s}, {"类型": "深层", "数": cv_d}
-        ])
-        if cv_t > 0:
-            st.altair_chart(
-                alt.Chart(layer_df).mark_bar().encode(
-                    x=alt.X("类型:N", title=None, axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y("数:Q", title="转化数"),
-                    color=alt.Color("类型:N", scale=alt.Scale(scheme="set2")),
-                    tooltip=["类型", "数"],
-                ).properties(height=200),
-                use_container_width=True,
-            )
-        st.markdown(r.conversion_layer)
-
-        # 🌐 ⑦ 竞争媒体情报
-        st.markdown(H3.format(text="🌐 竞争媒体情报"), unsafe_allow_html=True)
+        k1.metric("口碑好评率", f"{rep['review_rate']}%",
+                  help="客户正面沟通占比（基于企微消息情感）")
+        k2.metric("私信打开率", f"{rep['pm_open_rate']}%",
+                  help="留资/开口，反映承接话术效果")
+        k3.metric("私聊好评占比", f"{rep['pm_review_share']}%",
+                  help="沟通中 praise 类占比")
+        # 竞争媒体
         comp_rows = []
         total_all = agg_all["cur"]["spend"]
         for p, d in agg_all["by_platform"].items():
@@ -386,7 +448,7 @@ def main():
             st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
         st.caption(f"客户全平台预算中，【{home_cn}】占 {r.home_share}%，竞争媒体合计占 {r.comp_share}%。"
                    f"若{home_cn} ROI 更优，应作为增预算 / 挪量话术支点。")
-        st.markdown(r.competitor_intel)
+        st.markdown(r.reputation_competitor)
 
         # ⑧ 下一步行动
         st.markdown(H3.format(text="⑧ 下一步行动"), unsafe_allow_html=True)
