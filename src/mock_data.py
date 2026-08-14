@@ -13,6 +13,7 @@ adapter 的"翻译/归一化"价值：
 所有数字由固定 seed 生成，保证可复现、eval 稳定。
 """
 import random
+from collections import defaultdict
 from typing import Dict, List, Any
 
 PLATFORMS = ["xhs", "douyin", "tencent", "kuaishou"]
@@ -48,27 +49,29 @@ AUDIENCE_TYPES = ["人群包", "关键词定向", "行为兴趣", "智能定向"
 
 
 # 客户"人设"：trend 决定整体消耗走势，制造可诊断的信号
+# 第 5 项为「本平台（小红书）月均投放预算体量（¥）」—— 作为投放量级缩放因子，使大客户消耗更高、更真实。
+# 等级（KA/SMB）最终由「周均本平台消耗」阈值推导（见文末 post-pass），保证与展示口径自洽、可被验证。
 CUSTOMER_PROFILES = [
-    ("C001", "at_risk",   -0.14, "美妆",     "KA"),
-    ("C002", "growing",    0.18, "食品饮料", "SMB"),
-    ("C003", "stable",     0.01, "3C数码",   "KA"),
-    ("C004", "growing",    0.12, "母婴",     "SMB"),
-    ("C005", "at_risk",   -0.09, "服饰",     "SMB"),
-    ("C006", "growing",    0.22, "教育",     "KA"),
-    ("C007", "stable",     0.0,  "家居",     "SMB"),
-    ("C008", "at_risk",   -0.20, "美妆",     "SMB"),
-    ("C009", "growing",    0.15, "食品饮料", "KA"),
-    ("C010", "stable",     0.02, "3C数码",   "SMB"),
-    ("C011", "growing",    0.10, "母婴",     "KA"),
-    ("C012", "at_risk",   -0.07, "服饰",     "KA"),
-    ("C013", "growing",    0.20, "教育",     "SMB"),
-    ("C014", "stable",    -0.01, "家居",     "KA"),
-    ("C015", "growing",    0.13, "美妆",     "SMB"),
-    ("C016", "at_risk",   -0.11, "食品饮料", "SMB"),
-    ("C017", "growing",    0.17, "3C数码",   "KA"),
-    ("C018", "stable",     0.03, "母婴",     "SMB"),
-    ("C019", "growing",    0.09, "服饰",     "KA"),
-    ("C020", "at_risk",   -0.16, "教育",     "SMB"),
+    ("C001", "at_risk",   -0.14, "美妆",     180_000),
+    ("C002", "growing",    0.18, "食品饮料",   45_000),
+    ("C003", "stable",     0.01, "3C数码",   320_000),
+    ("C004", "growing",    0.12, "母婴",       60_000),
+    ("C005", "at_risk",   -0.09, "服饰",       35_000),
+    ("C006", "growing",    0.22, "教育",     210_000),
+    ("C007", "stable",     0.0,  "家居",       70_000),
+    ("C008", "at_risk",   -0.20, "美妆",       40_000),
+    ("C009", "growing",    0.15, "食品饮料", 150_000),
+    ("C010", "stable",     0.02, "3C数码",     55_000),
+    ("C011", "growing",    0.10, "母婴",     130_000),
+    ("C012", "at_risk",   -0.07, "服饰",     110_000),
+    ("C013", "growing",    0.20, "教育",       80_000),
+    ("C014", "stable",    -0.01, "家居",     280_000),
+    ("C015", "growing",    0.13, "美妆",       50_000),
+    ("C016", "at_risk",   -0.11, "食品饮料",   30_000),
+    ("C017", "growing",    0.17, "3C数码",   190_000),
+    ("C018", "stable",     0.03, "母婴",       65_000),
+    ("C019", "growing",    0.09, "服饰",     160_000),
+    ("C020", "at_risk",   -0.16, "教育",       42_000),
 ]
 
 
@@ -83,7 +86,9 @@ def generate_raw_dataset(seed: int = 42) -> Dict[str, List[Dict[str, Any]]]:
         "tencent_ads": [], "kuaishou_ads": [], "wecom": [], "benchmarks": [],
     }
 
-    for (cid, persona, trend, industry, tier) in CUSTOMER_PROFILES:
+    for (cid, persona, trend, industry, monthly_budget) in CUSTOMER_PROFILES:
+        # 预算缩放因子：让投放量级与等级自洽（月预算 10w 对应 1.0 基准）
+        budget_factor = monthly_budget / 100_000.0
         # 每个客户专属一个负责人（按 customer_id 索引，确保无重复）
         owner = OWNERS[int(cid[-2:]) - 1]
         joined = f"2025-{rnd.randint(1,12):02d}-{rnd.randint(1,28):02d}"
@@ -91,6 +96,8 @@ def generate_raw_dataset(seed: int = 42) -> Dict[str, List[Dict[str, Any]]]:
         status = "active" if persona != "at_risk" or rnd.random() < .6 else "paused"
         brand_idx = int(cid[-2:]) - 1
         brand_name = BRANDS[industry][brand_idx % len(BRANDS[industry])]
+        # tier 暂置占位，文末按「周均本平台消耗」阈值统一重算（见 post-pass）
+        tier = "SMB"
         raw["customers"].append({
             "cust_id": cid,
             "name": brand_name,
@@ -130,7 +137,7 @@ def generate_raw_dataset(seed: int = 42) -> Dict[str, List[Dict[str, Any]]]:
             for p in PLATFORMS:
                 for c in range(campaign_counts[p]):
                     noise = rnd.uniform(0.93, 1.07)
-                    base_imp = rnd.randint(30000, 250000)
+                    base_imp = int(rnd.randint(30000, 250000) * budget_factor)
                     impress = int(base_imp * week_factor * noise)
                     ctr_raw = rnd.uniform(0.008, 0.045)
                     clicks = max(1, int(impress * ctr_raw))
@@ -240,6 +247,20 @@ def generate_raw_dataset(seed: int = 42) -> Dict[str, List[Dict[str, Any]]]:
                         "roi": _round(rnd.uniform(1.2, 3.5), 2),
                         "trend": rnd.choice(["up", "down", "flat"]),
                     })
+
+    # —— 等级分类（数据驱动、与展示口径自洽）——
+    # 口径：按「本平台（小红书）周均消耗」分档。
+    #   KA（大客户）= 周均本平台消耗 ≥ KA_WEEKLY_SPEND（默认 ¥25,000）
+    #   SMB（中小客户）= 周均本平台消耗 <  KA_WEEKLY_SPEND
+    # 这样客户一览表中的「等级」列与「本平台消耗」列始终一致，可被直接验证。
+    KA_WEEKLY_SPEND = 15_000.0
+    _sp = defaultdict(float)
+    for ad in raw["xhs_ads"]:
+        _sp[ad["ad_id"].split("_")[1]] += ad["cost"]
+    n_weeks = len(WEEKS) or 1
+    for c in raw["customers"]:
+        avg_weekly = _sp.get(c["cust_id"], 0.0) / n_weeks
+        c["tier"] = "KA" if avg_weekly >= KA_WEEKLY_SPEND else "SMB"
 
     return raw
 

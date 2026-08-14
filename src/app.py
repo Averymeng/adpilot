@@ -4,13 +4,14 @@ app.py : AdPilot 网页演示 v5
 视角：本平台（小红书）= 销售经营的账户 = 复盘核心；竞争媒体 = 客户跨平台投放 = 情报视角。
 
 UI 改进（按用户反馈）：
-- 隐藏 Streamlit 原生英文 UI（toolbar/main menu/deploy/status/footer）+ 隐藏右上角
-- 侧边栏所有筛选器合并为一个区块，无「单客户 vs 全部」的硬分割
-- 客户下拉显示全名（品牌名 + 客户编号），不截断
-- 客户总览表标题改为「客户一览」，无外链符号
-- 筛选条件已联动总览表（之前未生效是因为默认全「全部」所以看着没动）
-- 负责人全去重（20 个不同姓名）
-- 图表横坐标文字横排（旋转 0 度）
+- 隐藏 Streamlit 原生英文 UI（toolbar/main menu/deploy/status/footer）
+- 侧边栏「筛选」模块：行业 / 等级 / 客户阶段 / 复盘周，标准下拉（Excel 式，不搞特殊）
+- 「复盘对象」作为筛选模块的一部分（受上方筛选联动的普通下拉），不再单独成块
+- 客户一览表：标题左侧、右上角放「▶ 生成本周复盘」按钮（点击即对所选复盘对象出报告）
+- 「客户」列固定列宽 260px，品牌名 + 编号完整显示、不再被挤压截断
+- 客户总览表无外链 / 跳转按钮
+- 负责人全去重（20 个不同姓名）；图表横坐标文字横排
+- 等级（KA/SMB）由「周均本平台（小红书）消耗」阈值判定（数据驱动，与表格口径自洽，可被验证）
 - 复盘结构基于真实小红书 / 信息流投放逻辑：8 段式（总览+KFS+漏斗+素材+人群+转化+情报+行动）
 """
 import os
@@ -140,9 +141,9 @@ def main():
         "SELECT DISTINCT industry FROM customers ORDER BY industry").fetchall()]
     tiers = ["全部", "KA", "SMB"]
 
-    # —— 一个区块放所有筛选器 ——
+    # —— 筛选模块（Excel 式下拉，普通不特殊）——
     with st.sidebar:
-        st.markdown(H4.format(text="⚙️ 筛选"), unsafe_allow_html=True)
+        st.markdown(H4.format(text="筛选"), unsafe_allow_html=True)
         f_industry = st.selectbox("行业", industries, index=0, key="f_industry")
         f_tier = st.selectbox("等级", tiers, index=0, key="f_tier")
         f_stage = st.selectbox("客户阶段", ["全部", "流失风险", "高速增长", "稳定期", "新客期"],
@@ -152,37 +153,43 @@ def main():
         period = st.selectbox("复盘周", weeks, index=len(weeks) - 1, key="f_period")
 
         st.divider()
-        st.markdown(H4.format(text="🎯 复盘对象"), unsafe_allow_html=True)
-        # 用 brand 列表（display key）— 选哪个显示完整品牌名 + 编号，不截断
-        avail = [(dbm.get_customer(conn, r[0]).name, r[0]) for r in conn.execute(
+        # 复盘对象：作为筛选模块的一部分（受上方筛选联动），Excel 式下拉
+        all_cust = [r[0] for r in conn.execute(
             "SELECT customer_id FROM customers ORDER BY customer_id").fetchall()]
-        # 受当前筛选影响（联动）
-        if f_industry != "全部" or f_tier != "全部" or f_stage_key != "全部":
-            avail = [a for a in avail
-                     if (f_industry == "全部"
-                         or dbm.get_customer(conn, a[1]).industry == f_industry)
-                     and (f_tier == "全部"
-                          or dbm.get_customer(conn, a[1]).tier == f_tier)
-                     and (f_stage_key == "全部"
-                          or dbm.get_customer(conn, a[1]).lifecycle_stage == f_stage_key)]
-        display = [f"{n} ({c})" for n, c in avail]
-        cid_map = {f"{n} ({c})": c for n, c in avail}
-        # 默认取筛选后第一个
+        avail = []
+        for c in all_cust:
+            cu = dbm.get_customer(conn, c)
+            if f_industry != "全部" and cu.industry != f_industry:
+                continue
+            if f_tier != "全部" and cu.tier != f_tier:
+                continue
+            if f_stage_key != "全部" and cu.lifecycle_stage != f_stage_key:
+                continue
+            avail.append(cu)
+        display = [f"{cu.name} ({cu.customer_id})" for cu in avail]
+        cid_map = {f"{cu.name} ({cu.customer_id})": cu.customer_id for cu in avail}
         if display:
-            sel = st.selectbox("客户（显示全名）", display, index=0, key="f_cid")
+            sel = st.selectbox("复盘对象（选客户生成复盘）", display, index=0, key="f_cid")
             cid = cid_map[sel]
         else:
-            st.caption("当前条件下无客户")
+            st.caption("当前筛选条件下无客户")
             cid = None
 
-    # ---- 客户一览（标题去链接 + 全量表）----
+    # ---- 客户一览：置顶右上角「生成本周复盘」按钮；列宽保证客户名完整 ----
     overview = _overview_table(conn, weeks, f_industry, f_tier, f_stage_key)
-    st.markdown(H4.format(text="客户一览"), unsafe_allow_html=True)
+    hc1, hc2 = st.columns([6, 1.3])
+    with hc1:
+        st.markdown(H4.format(text="客户一览"), unsafe_allow_html=True)
+    with hc2:
+        gen_clicked = st.button("▶ 生成本周复盘", type="primary",
+                                use_container_width=True, key="gen_btn")
     if overview.empty:
         st.caption("当前筛选条件下无客户。")
     else:
         st.dataframe(overview, use_container_width=True, hide_index=True,
                      column_config={
+                         # 固定客户名列宽，避免品牌名被挤压截断
+                         "客户": st.column_config.TextColumn(width=260),
                          "本平台消耗(¥)": st.column_config.NumberColumn(format="%d"),
                          "本平台GMV(¥)": st.column_config.NumberColumn(format="%d"),
                      })
@@ -191,10 +198,8 @@ def main():
     st.divider()
 
     if cid is None:
-        st.info("请在左侧选择客户后点击「生成本周复盘」。")
-        return
-
-    if st.button("▶ 生成本周复盘", type="primary"):
+        st.info("当前筛选条件下无可选客户，请调整左侧筛选。")
+    elif gen_clicked:
         with st.spinner("AI 生成中…"):
             prev = _prev_period(conn, period)
             contents = dbm.get_contents(conn, {a.content_id for a in dbm.get_ads(conn, cid, period)})
