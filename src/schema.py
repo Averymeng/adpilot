@@ -132,6 +132,52 @@ class Demographics:
     top_interest: str = ""
 
 
+@dataclass
+class Alert:
+    """每日异常预警（盯盘助手规则引擎产出，本平台客资账户视角）"""
+    alert_id: str
+    customer_id: str
+    period: str
+    alert_type: str          # 掉量 / 成本上升 / 超成本 / 预算花不完 / 负反馈 / 高潜增投 / 素材疲劳
+    severity: str            # high / medium / low / info
+    metric_name: str
+    metric_value: float
+    threshold: float
+    title: str
+    message: str
+    suggested_action: str
+    is_resolved: int = 0
+
+
+@dataclass
+class Task:
+    """待办与跟进（来自复盘行动项 + 预警 + 企微投诉的拆解）"""
+    task_id: str
+    customer_id: str
+    owner: str
+    source: str              # 每周复盘 / 异常预警 / 企微沟通
+    title: str
+    detail: str
+    priority: str            # P0 / P1 / P2
+    due_week: str            # 建议截止周（复盘周 + N）
+    status: str = "pending"  # pending / in_progress / done
+
+
+@dataclass
+class BadCase:
+    """Badcase 库（沉淀高成本计划 / 低质素材，附归因与修复）"""
+    case_id: str
+    customer_id: str
+    period: str
+    case_type: str           # 高成本计划 / 低质素材 / 定向跑偏
+    object_name: str
+    symptom: str
+    root_cause: str
+    fix: str
+    impact_value: float = 0.0    # 额外浪费/可回收金额（元）
+    is_archived: int = 0
+
+
 SCHEMA_MODELS = {
     "customer": CustomerProfile,
     "ad": AdPerformance,
@@ -139,4 +185,7 @@ SCHEMA_MODELS = {
     "comms": CommunicationRecord,
     "benchmark": IndustryBenchmark,
     "demographics": Demographics,
+    "alert": Alert,
+    "task": Task,
+    "badcase": BadCase,
 }

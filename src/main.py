@@ -24,10 +24,15 @@ def build():
     store = mock_data.generate_raw_dataset()
     conn = dbm.init_db(DB_PATH)
     dbm.load_from_store(conn, store)
+    dbm.load_derived(conn)   # 预警 / 待办 / Badcase 三张派生表
     print(f"已生成并入库："
           f"客户 {len(store['customers'])} / "
           f"广告 {len(store['xhs_ads'])+len(store['douyin_ads'])+len(store['tencent_ads'])+len(store['kuaishou_ads'])} / "
           f"笔记 {len(store['xhs_notes'])} / 沟通 {len(store['wecom'])} / 大盘 {len(store['benchmarks'])}")
+    na = conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0]
+    nt = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+    nb = conn.execute("SELECT COUNT(*) FROM badcases").fetchone()[0]
+    print(f"派生表：预警 {na} / 待办 {nt} / Badcase {nb}")
     conn.close()
 
 
