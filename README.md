@@ -43,14 +43,25 @@ LLM 接口可配置：有 `OPENAI_API_KEY` 走真实模型；否则用 **MockLLM
 
 ## 4. 运行方式
 
+**A. 网页演示（推荐，最直观）**
 ```bash
 cd adpilot/src
-python3 main.py build     # 生成虚拟数据 + 建库（20 客户 / 4 平台 / 12 周 / 1911 条广告）
-python3 main.py review C001   # 对 C001 跑本周复盘
-python3 main.py eval      # 全量自测：20/20 通过（结构完整 + 数字与 DB 一致）
+pip install streamlit openai      # 仅 UI + 真实 LLM 需要；核心逻辑仍零依赖
+python3 main.py build             # 生成虚拟数据 + 建库（首次运行）
+streamlit run app.py              # 打开 http://localhost:8501
+```
+界面：选客户 + 周 → 一键生成「一句话诊断 + RACAE 五段」复盘报告，含各平台 ROI 对标柱状图。
+
+**B. 命令行**
+```bash
+python3 main.py build          # 生成虚拟数据 + 建库（20 客户 / 4 平台 / 12 周 / 1920 条广告）
+python3 main.py review C001    # 对 C001 跑本周复盘
+python3 main.py eval           # 全量自测：20/20 通过（结构完整 + 数字与 DB 一致）
 ```
 
-依赖：**仅 Python 标准库**（dataclasses / sqlite3），零第三方包，可移植运行。
+**真实自然语言报告（可选）**：复制 `.env.example` 为 `.env` 并填入 `OPENAI_API_KEY`，重启 `streamlit run app.py` 即自动切换为真实 OpenAI 生成（仍基于 DB 真实数字，防幻觉）。不填则用 MockLLM（数据驱动模板），本机零联网也能演示。
+
+核心逻辑依赖：**仅 Python 标准库**（dataclasses / sqlite3）。Streamlit / openai 仅用于演示界面与增强语言能力。
 
 ## 5. 数据说明（诚实声明，简历必写）
 
@@ -68,6 +79,12 @@ adpilot/
 │   ├── llm.py             # LLM 接口（真实 / Mock 回退）
 │   ├── weekly_review.py   # 核心 AI 节点（诊断 + RACAE）
 │   ├── eval_review.py     # 自测评估
-│   └── main.py            # 一键 build / review / eval
+│   ├── main.py            # 一键 build / review / eval
+│   └── app.py             # Streamlit 网页演示
+├── .env.example           # OPENAI_API_KEY 模板
 └── data/adpilot.db
 ```
+
+## 7. 仓库
+
+GitHub：https://github.com/Averymeng/adpilot（公开，可作作品集展示）
