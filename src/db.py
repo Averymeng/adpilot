@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS benchmarks (
 
 
 def init_db(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, check_same_thread=False)
     conn.executescript(SCHEMA_SQL)
     conn.commit()
     return conn
