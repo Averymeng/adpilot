@@ -1,14 +1,10 @@
 """
-app.py : AdPilot 网页演示 v3
+app.py : AdPilot 网页演示 v4
 ===========================
-- 隐藏 Streamlit 英文工具栏 / 部署按钮 / 底栏
-- 标题用 HTML 渲染（去掉 markdown 自动的锚点 # 图标）
-- 客户阶段（替代"生命周期"）
-- 侧边栏筛选：行业 / 等级 / 客户阶段
-- 打开默认显示：全部客户总览表
-- 客户信息条 4 指标改为 5 指标（行业 / 等级 拆开）
-- 关键指标卡顺序：GMV / 消耗 / ROI / 转化
-- CTR / CVR 一律以百分数呈现
+视角修正：本平台（小红书）= 销售经营的账户 = 复盘核心；
+          竞争媒体（抖音/腾讯/快手）= 客户跨平台投放 = 情报视角。
+- 隐藏 Streamlit 原生英文工具栏（无法汉化），改用侧边栏中文按钮替代
+- 客户阶段 / 筛选 / 默认全量总览 / CTR·CVR 百分数 / 本平台视角
 """
 import os
 import sys
@@ -20,11 +16,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(HERE, "..", "data", "adpilot.db")
 sys.path.insert(0, HERE)
 import db as dbm
-from weekly_review import run_weekly_review, compute_aggregates, STAGE_CN
+from weekly_review import (run_weekly_review, compute_aggregates, STAGE_CN,
+                           HOME_PLATFORM, PLATFORM_CN)
 from llm import get_llm
 
 
-# ---------- 隐藏 Streamlit 自带英文 UI ----------
+# ---------- 隐藏 Streamlit 自带英文 UI（其文字写死英文，无法汉化）----------
 HIDE_CHROME_CSS = """
 <style>
 #MainMenu {visibility: hidden;}
@@ -56,18 +53,19 @@ def _prev_period(conn, period):
     return period
 
 
-def _customer_history(conn, cid, weeks):
+def _weeks(conn):
+    return [r[0] for r in conn.execute(
+        "SELECT DISTINCT period FROM ads ORDER BY period").fetchall()]
+
+
+def _customer_history(conn, cid, weeks, platform):
     rows = []
     for w in weeks:
-        ads = dbm.get_ads(conn, cid, w)
+        ads = [a for a in dbm.get_ads(conn, cid, w) if a.platform == platform]
         sp = sum(a.spend for a in ads); gm = sum(a.gmv for a in ads)
         cv = sum(a.conversions for a in ads)
-        rows.append({
-            "period": w,
-            "spend": int(sp), "gmv": int(gm),
-            "roi": round(gm / sp, 2) if sp else 0,
-            "conv": cv,
-        })
+        rows.append({"period": w, "spend": int(sp), "gmv": int(gm),
+                     "roi": round(gm / sp, 2) if sp else 0, "conv": cv})
     return pd.DataFrame(rows)
 
 
@@ -76,12 +74,10 @@ def _stage_emoji(stage):
             "onboarding": "🟡 新客期", "stable": "🔵 稳定期"}.get(stage, stage)
 
 
-def _overview_table(conn, filter_industry=None, filter_tier=None, filter_stage=None):
-    """默认页面显示的全量客户表。"""
+def _overview_table(conn, weeks, filter_industry=None, filter_tier=None, filter_stage=None):
+    """默认页面显示的全量客户表（以【本平台】为视角）。"""
     customers = [dbm.get_customer(conn, r[0]) for r in conn.execute(
         "SELECT customer_id FROM customers ORDER BY customer_id").fetchall()]
-    weeks = [r[0] for r in conn.execute(
-        "SELECT DISTINCT period FROM ads ORDER BY period").fetchall()]
     latest = weeks[-1] if weeks else None
     if not latest:
         return pd.DataFrame()
@@ -93,20 +89,24 @@ def _overview_table(conn, filter_industry=None, filter_tier=None, filter_stage=N
             continue
         if filter_stage and filter_stage != "全部" and c.lifecycle_stage != filter_stage:
             continue
-        ads = dbm.get_ads(conn, c.customer_id, latest)
-        sp = sum(a.spend for a in ads); gm = sum(a.gmv for a in ads)
-        cv = sum(a.conversions for a in ads); im = sum(a.impressions for a in ads)
-        clk = sum(a.clicks for a in ads)
+        ads_all = dbm.get_ads(conn, c.customer_id, latest)
+        ads_home = [a for a in ads_all if a.platform == HOME_PLATFORM]
+        sp = sum(a.spend for a in ads_home); gm = sum(a.gmv for a in ads_home)
+        cv = sum(a.conversions for a in ads_home)
+        im = sum(a.impressions for a in ads_home); clk = sum(a.clicks for a in ads_home)
+        all_sp = sum(a.spend for a in ads_all)
+        comp_share = round((all_sp - sp) / all_sp * 100, 1) if all_sp else 0
         rows.append({
             "客户": f"{c.name}  ({c.customer_id})",
             "行业": c.industry, "等级": c.tier,
             "客户阶段": _stage_emoji(c.lifecycle_stage),
             "负责人": c.owner,
-            "本周消耗(¥)": int(sp),
-            "本周GMV(¥)": int(gm),
-            "ROI": round(gm / sp, 2) if sp else 0,
+            f"本平台消耗(¥)": int(sp),
+            f"本平台GMV(¥)": int(gm),
+            "本平台ROI": round(gm / sp, 2) if sp else 0,
             "CTR": f"{(clk/im*100 if im else 0):.2f}%",
             "本周转化": cv,
+            "竞争媒体占比": f"{comp_share}%",
         })
     return pd.DataFrame(rows)
 
@@ -118,13 +118,16 @@ def main():
     conn = get_conn()
     llm = get_llm()
     use_real = os.environ.get("OPENAI_API_KEY") is not None
+    weeks = _weeks(conn)
+    home_cn = PLATFORM_CN.get(HOME_PLATFORM, HOME_PLATFORM)
 
     st.markdown(H3.format(text="📊 AdPilot · 互联网商业化投放复盘工作台"), unsafe_allow_html=True)
+    st.info(f"本工作台视角：销售代表 **【{home_cn}】** 服务客户 → 复盘核心 = 客户在{home_cn}的账户；"
+            f"客户在抖音 / 腾讯 / 快手等投放视为**竞争媒体**（情报视角）。")
 
     industries = ["全部"] + [r[0] for r in conn.execute(
         "SELECT DISTINCT industry FROM customers ORDER BY industry").fetchall()]
     tiers = ["全部", "KA", "SMB"]
-    stages = ["全部", "at_risk", "growing", "stable", "onboarding"]
 
     with st.sidebar:
         st.markdown(H4.format(text="⚙️ 筛选"), unsafe_allow_html=True)
@@ -139,34 +142,44 @@ def main():
         avail = [r[0] for r in conn.execute(
             "SELECT customer_id FROM customers ORDER BY customer_id").fetchall()]
         cid = st.selectbox("客户编号", avail, index=0)
-        weeks = [r[0] for r in conn.execute(
-            "SELECT DISTINCT period FROM ads ORDER BY period").fetchall()]
         period = st.selectbox("周", weeks, index=len(weeks) - 1)
-        st.divider()
-        st.write(f"**报告引擎**：{'🟢 真实 OpenAI' if use_real else '🟡 Mock 模板'}")
 
-    # ---- 默认：全量客户总览 ----
-    st.markdown(H4.format(text="📋 全部客户本周总览"), unsafe_allow_html=True)
-    overview = _overview_table(conn, f_industry, f_tier, f_stage_key)
+        st.divider()
+        # —— 中文按钮（替代无法汉化的 Streamlit 原生英文菜单）——
+        st.markdown(H4.format(text="🛠 操作"), unsafe_allow_html=True)
+        if st.button("🔄 重新生成模拟数据"):
+            import main as _m
+            _m.build()
+            st.cache_resource.clear()
+            st.rerun()
+        st.write(f"**报告引擎**：{'🟢 真实 OpenAI' if use_real else '🟡 Mock 模板'}")
+        st.caption("ℹ️ Streamlit 原生右上角菜单为英文且无法汉化，已用上方中文按钮替代。")
+
+    # ---- 默认：全量客户总览（本平台视角）----
+    st.markdown(H4.format(text="📋 全部客户本周总览（本平台视角）"), unsafe_allow_html=True)
+    overview = _overview_table(conn, weeks, f_industry, f_tier, f_stage_key)
     st.dataframe(overview, use_container_width=True, hide_index=True,
                  column_config={
-                     "本周消耗(¥)": st.column_config.NumberColumn(format="%d"),
-                     "本周GMV(¥)": st.column_config.NumberColumn(format="%d"),
+                     "本平台消耗(¥)": st.column_config.NumberColumn(format="%d"),
+                     "本平台GMV(¥)": st.column_config.NumberColumn(format="%d"),
                  })
-    st.caption(f"已加载 {len(overview)} 个客户 · 数据周 {period} · 引擎：{'OpenAI' if use_real else 'Mock'}")
+    st.caption(f"已加载 {len(overview)} 个客户 · 数据周 {period} · 本平台：{home_cn} · 引擎：{'OpenAI' if use_real else 'Mock'}")
 
     st.divider()
 
     if st.button("▶ 生成本周复盘", type="primary"):
         with st.spinner("AI 生成中…"):
+            prev = _prev_period(conn, period)
             r = run_weekly_review(conn, cid, period, llm)
             contents = dbm.get_contents(conn, {a.content_id for a in dbm.get_ads(conn, cid, period)})
             comms = dbm.get_comms(conn, cid, period)
-            agg = compute_aggregates(conn, cid, period, _prev_period(conn, period), contents, comms)
+            agg_all = compute_aggregates(conn, cid, period, prev, contents, comms)
+            agg_home = compute_aggregates(conn, cid, period, prev, contents, comms,
+                                          platform=HOME_PLATFORM)
 
         profile = dbm.get_customer(conn, cid)
 
-        # 客户信息条（5 个指标：客户名 / 行业 / 等级 / 负责人 / 客户阶段）
+        # 客户信息条
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("客户", f"{profile.name}  ({profile.customer_id})")
         c2.metric("行业", profile.industry)
@@ -183,27 +196,31 @@ def main():
         else:
             st.info(r.diagnosis)
 
-        # 关键指标卡（GMV / 消耗 / ROI / 转化 + CTR 百分数）
-        cur, wow = agg["cur"], agg["wow"]
+        # 关键指标卡（本平台）
+        cur, wow = agg_home["cur"], agg_home["wow"]
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("GMV ¥", f"{int(cur['gmv']):,}", f"{wow['gmv']:+.1f}% WoW")
-        m2.metric("消耗 ¥", f"{int(cur['spend']):,}", f"{wow['spend']:+.1f}% WoW")
-        m3.metric("ROI", f"{cur['roi']}", f"{wow['roi']:+.2f} WoW")
-        m4.metric("转化", f"{cur['conversions']:,}",
+        m1.metric(f"本平台 GMV ¥", f"{int(cur['gmv']):,}", f"{wow['gmv']:+.1f}% WoW")
+        m2.metric(f"本平台 消耗 ¥", f"{int(cur['spend']):,}", f"{wow['spend']:+.1f}% WoW")
+        m3.metric("本平台 ROI", f"{cur['roi']}", f"{wow['roi']:+.2f} WoW")
+        m4.metric("本平台 转化", f"{cur['conversions']:,}",
                   f"CTR {cur['ctr']*100:.2f}% · CVR {cur['cvr']*100:.2f}%")
 
         # ① 总览与结论
         st.markdown(H3.format(text="① 总览与结论"), unsafe_allow_html=True)
         st.markdown(r.overview)
 
-        # ② 广告布局 / 漏斗分配
+        # ② 广告布局 / 漏斗分配（跨平台，本平台 vs 竞争媒体）
         st.markdown(H3.format(text="② 广告布局 / 漏斗分配"), unsafe_allow_html=True)
         plat_rows = []
-        for p, d in sorted(agg["by_platform"].items(), key=lambda x: -x[1]["spend"]):
-            bench = agg["bench"].get(p) or 0
+        total_all = agg_all["cur"]["spend"]
+        for p, d in sorted(agg_all["by_platform"].items(), key=lambda x: -x[1]["spend"]):
+            bench = agg_all["bench"].get(p) or 0
+            share = round(d["spend"] / total_all * 100, 1) if total_all else 0
             plat_rows.append({
-                "平台": p, "消耗(¥)": int(d["spend"]), "GMV(¥)": int(d["gmv"]),
-                "ROI": d["roi"], "行业基准 ROI": bench, "vs 基准": round(d["roi"] - bench, 2),
+                "平台": f"{PLATFORM_CN.get(p, p)}" + ("【本平台】" if p == HOME_PLATFORM else "（竞争媒体）"),
+                "消耗(¥)": int(d["spend"]), "GMV(¥)": int(d["gmv"]),
+                "ROI": d["roi"], "占全平台比": f"{share}%",
+                "行业基准 ROI": bench, "vs 基准": round(d["roi"] - bench, 2),
             })
         st.dataframe(pd.DataFrame(plat_rows), use_container_width=True, hide_index=True)
         chart_df = pd.DataFrame([
@@ -223,9 +240,29 @@ def main():
         )
         st.caption(r.layout.split("\n")[-1] if r.layout else "")
 
-        # ③ 各层级成效 + 跨周趋势
+        # 🌐 竞争媒体投放分布（情报视角）
+        st.markdown(H3.format(text="🌐 竞争媒体投放分布（情报视角）"), unsafe_allow_html=True)
+        comp_rows = []
+        for p, d in agg_all["by_platform"].items():
+            if p == HOME_PLATFORM:
+                continue
+            comp_rows.append({
+                "竞争平台": PLATFORM_CN.get(p, p),
+                "消耗(¥)": int(d["spend"]), "GMV(¥)": int(d["gmv"]),
+                "ROI": d["roi"],
+                "占全平台比": f"{round(d['spend']/total_all*100, 1)}%" if total_all else "0%",
+            })
+        if comp_rows:
+            st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
+            st.caption(f"客户全平台预算中，竞争媒体合计占 {r.comp_share}%，"
+                       f"【{home_cn}】仅占 {r.home_share}%。"
+                       f"若{home_cn} ROI 更优，应作为增预算 / 挪量话术支点。")
+        else:
+            st.caption("该客户暂无竞争媒体投放。")
+
+        # ③ 各层级成效（本平台）+ 跨周趋势
         st.markdown(H3.format(text="③ 各层级成效（按周对比趋势）"), unsafe_allow_html=True)
-        history = _customer_history(conn, cid, weeks)
+        history = _customer_history(conn, cid, weeks, HOME_PLATFORM)
         if not history.empty:
             trend_long = history.melt(id_vars=["period"],
                                       value_vars=["spend", "gmv", "roi"],
@@ -241,17 +278,17 @@ def main():
             )
         st.markdown(r.layer_perf)
 
-        # ④ 广告组合成效
+        # ④ 广告组合成效（本平台：受众 + 素材）
         st.markdown(H3.format(text="④ 广告组合成效（受众 + 素材双维度）"), unsafe_allow_html=True)
-        aud_sorted = sorted(agg["by_audience"].items(), key=lambda x: -x[1]["roi"])
+        aud_sorted = sorted(agg_home["by_audience"].items(), key=lambda x: -x[1]["roi"])
         aud_df = pd.DataFrame([{
             "人群": k, "消耗(¥)": int(d["spend"]), "GMV(¥)": int(d["gmv"]),
             "转化": d["conv"], "ROI": d["roi"],
         } for k, d in aud_sorted])
-        st.markdown("**人群维度（按 ROI 降序）**")
+        st.markdown("**受众维度（按 ROI 降序）**")
         st.dataframe(aud_df, use_container_width=True, hide_index=True)
 
-        ct_sorted = sorted(agg["by_content"].items(), key=lambda x: -x[1]["roi"])
+        ct_sorted = sorted(agg_home["by_content"].items(), key=lambda x: -x[1]["roi"])
         ct_df = pd.DataFrame([{
             "素材标题": d["title"][:28], "消耗(¥)": int(d["spend"]),
             "GMV(¥)": int(d["gmv"]), "转化": d["conv"], "ROI": d["roi"],
@@ -266,6 +303,8 @@ def main():
 
         with st.expander("📄 完整 Markdown 报告"):
             st.code(r.render(), language="markdown")
+            st.download_button("📥 下载报告 (.md)", r.render(),
+                               file_name=f"adpilot_{cid}_{period}.md", mime="text/markdown")
 
 
 if __name__ == "__main__":
