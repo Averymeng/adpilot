@@ -20,28 +20,39 @@ INDUSTRIES = ["美妆", "食品饮料", "3C数码", "母婴", "服饰", "教育"
 OWNERS = ["张优化", "李增长", "王投放", "赵媒介"]
 WEEKS = [f"2026-W{w:02d}" for w in range(21, 33)]  # 12 周
 
+# 行业 → 真实品牌（用于 mock 客户名；非商业用途）
+BRANDS = {
+    "美妆":     ["完美日记", "花西子", "毛戈平", "橘朵", "彩棠"],
+    "食品饮料": ["三只松鼠", "良品铺子", "王小卤", "元气森林", "钟薛高"],
+    "3C数码":   ["小米", "OPPO", "大疆", "石头科技", "倍轻松"],
+    "母婴":     ["Babycare", "飞鹤", "君乐宝", "babycare", "贝亲"],
+    "服饰":     ["蕉下", "Ubras", "内外", "MAIA ACTIVE", "lululemon"],
+    "教育":     ["作业帮", "斑马英语", "火花思维", "学而思", "猿辅导"],
+    "家居":     ["林氏木业", "源氏木语", "欧派", "索菲亚", "全友家居"],
+}
+
 # 客户"人设"：trend 决定整体消耗走势，制造可诊断的信号
 CUSTOMER_PROFILES = [
-    ("C001", "at_risk",   -0.14, "美妆",   "KA"),     # 持续下滑 -> 核心风险案例
+    ("C001", "at_risk",   -0.14, "美妆",     "KA"),
     ("C002", "growing",    0.18, "食品饮料", "SMB"),
-    ("C003", "stable",     0.01, "3C数码",  "KA"),
-    ("C004", "growing",    0.12, "母婴",    "SMB"),
-    ("C005", "at_risk",   -0.09, "服饰",    "SMB"),
-    ("C006", "growing",    0.22, "教育",    "KA"),
-    ("C007", "stable",     0.0,  "家居",    "SMB"),
-    ("C008", "at_risk",   -0.20, "美妆",    "SMB"),
+    ("C003", "stable",     0.01, "3C数码",   "KA"),
+    ("C004", "growing",    0.12, "母婴",     "SMB"),
+    ("C005", "at_risk",   -0.09, "服饰",     "SMB"),
+    ("C006", "growing",    0.22, "教育",     "KA"),
+    ("C007", "stable",     0.0,  "家居",     "SMB"),
+    ("C008", "at_risk",   -0.20, "美妆",     "SMB"),
     ("C009", "growing",    0.15, "食品饮料", "KA"),
-    ("C010", "stable",     0.02, "3C数码",  "SMB"),
-    ("C011", "growing",    0.10, "母婴",    "KA"),
-    ("C012", "at_risk",   -0.07, "服饰",    "KA"),
-    ("C013", "growing",    0.20, "教育",    "SMB"),
-    ("C014", "stable",    -0.01, "家居",    "KA"),
-    ("C015", "growing",    0.13, "美妆",    "SMB"),
+    ("C010", "stable",     0.02, "3C数码",   "SMB"),
+    ("C011", "growing",    0.10, "母婴",     "KA"),
+    ("C012", "at_risk",   -0.07, "服饰",     "KA"),
+    ("C013", "growing",    0.20, "教育",     "SMB"),
+    ("C014", "stable",    -0.01, "家居",     "KA"),
+    ("C015", "growing",    0.13, "美妆",     "SMB"),
     ("C016", "at_risk",   -0.11, "食品饮料", "SMB"),
-    ("C017", "growing",    0.17, "3C数码",  "KA"),
-    ("C018", "stable",     0.03, "母婴",    "SMB"),
-    ("C019", "growing",    0.09, "服饰",    "KA"),
-    ("C020", "at_risk",   -0.16, "教育",    "SMB"),
+    ("C017", "growing",    0.17, "3C数码",   "KA"),
+    ("C018", "stable",     0.03, "母婴",     "SMB"),
+    ("C019", "growing",    0.09, "服饰",     "KA"),
+    ("C020", "at_risk",   -0.16, "教育",     "SMB"),
 ]
 
 
@@ -59,11 +70,15 @@ def generate_raw_dataset(seed: int = 42) -> Dict[str, List[Dict[str, Any]]]:
     for (cid, persona, trend, industry, tier) in CUSTOMER_PROFILES:
         owner = rnd.choice(OWNERS)
         joined = f"2025-{rnd.randint(1,12):02d}-{rnd.randint(1,28):02d}"
-        # 生命周期阶段由 persona 决定
         stage = {"at_risk": "at_risk", "growing": "growing", "stable": "stable"}[persona]
         status = "active" if persona != "at_risk" or rnd.random() < .6 else "paused"
+        # 用真实品牌名作为客户名（每行业固定 5 个，按 cid 索引取，20 客户一一对应）
+        brand_idx = int(cid[-2:]) - 1
+        brand_name = BRANDS[industry][brand_idx % len(BRANDS[industry])]
         raw["customers"].append({
-            "cust_id": cid, "company": f"{industry}行业示例公司{cid[-2:]}",
+            "cust_id": cid,
+            "name": brand_name,
+            "company": f"{brand_name}旗舰店",
             "industry": industry, "tier": tier, "owner": owner,
             "wecom": f"wx_{cid}", "status": status, "joined": joined, "stage": stage,
         })

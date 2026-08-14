@@ -119,29 +119,37 @@ def compute_aggregates(conn, customer_id: str, period: str, prev_period: str,
 
 
 # ----------------------------- 报告生成（L4 核心） -----------------------------
+STAGE_CN = {"at_risk": "流失风险", "growing": "高速增长",
+            "onboarding": "新客期", "stable": "稳定期"}
+
+
 def build_report(profile: CustomerProfile, agg: Dict, period: str) -> Report:
     cur, wow = agg["cur"], agg["wow"]
     bench_vals = [v for v in agg["bench"].values() if v]
     bench_avg = round(sum(bench_vals) / len(bench_vals), 2) if bench_vals else 0
     neg = agg["neg_count"]
+    ctr_pct = f"{cur['ctr']*100:.2f}%"
+    cvr_pct = f"{cur['cvr']*100:.2f}%"
+    who = f"{profile.name}（{profile.customer_id}，{profile.industry}）"
+    stage_cn = STAGE_CN.get(profile.lifecycle_stage, profile.lifecycle_stage)
 
-    # —— 一句话诊断（结合客户生命周期阶段 + 真实环比数据，保证故事自洽）——
+    # —— 一句话诊断（结合客户阶段 + 真实环比数据，保证故事自洽）——
     if profile.lifecycle_stage == "at_risk":
-        diag = (f"{profile.customer_id}（{profile.industry}）处于风险阶段，本周消耗环比{wow['spend']}%、"
+        diag = (f"{who} 处于「{stage_cn}」，本周消耗环比{wow['spend']}%、"
                 f"ROI {cur['roi']}（行业基准 {bench_avg}），叠加 {neg} 条客户负面反馈，"
                 f"建议立即收缩低效计划并重启高意向人群测试。")
     elif profile.lifecycle_stage == "growing" and wow["spend"] >= 3:
-        diag = (f"{profile.customer_id}（{profile.industry}）本周消耗环比+{wow['spend']}%、"
+        diag = (f"{who}「{stage_cn}」，本周消耗环比+{wow['spend']}%、"
                 f"ROI {cur['roi']}（行业基准 {bench_avg}），增长健康，建议加预算放大优质计划。")
     else:
-        diag = (f"{profile.customer_id}（{profile.industry}）本周消耗环比{wow['spend']}%、"
+        diag = (f"{who}「{stage_cn}」，本周消耗环比{wow['spend']}%、"
                 f"ROI {cur['roi']}（行业基准 {bench_avg}），整体平稳，重点优化短板计划即可。")
 
     # ① 总览
     overview = (
         f"本周总消耗 ¥{int(round(cur['spend'])):,}（环比 {wow['spend']}%），GMV ¥{int(round(cur['gmv'])):,}（环比 {wow['gmv']}%），"
         f"综合 ROI {cur['roi']}（环比 {wow['roi']}）。曝光 {cur['impressions']:,}、点击 {cur['clicks']:,}、"
-        f"转化 {cur['conversions']:,}，CTR {cur['ctr']}、CVR {cur['cvr']}。"
+        f"转化 {cur['conversions']:,}，CTR {ctr_pct}、CVR {cvr_pct}。"
         + (f"客户侧收到 {agg['neg_count']} 条负面反馈，需重点关注。" if agg['neg_count'] else "客户沟通情绪整体平稳。")
     )
 
@@ -158,7 +166,7 @@ def build_report(profile: CustomerProfile, agg: Dict, period: str) -> Report:
     # ③ 各层级成效（按周对比）
     layer_perf = (
         f"本周 vs 上周：消耗 {wow['spend']}%、点击 {wow['clicks']}%、GMV {wow['gmv']}%、ROI {wow['roi']}。"
-        f"漏斗看，点击层（CTR {cur['ctr']}）与转化层（CVR {cur['cvr']}）是主要杠杆点；"
+        f"漏斗看，点击层（CTR {ctr_pct}）与转化层（CVR {cvr_pct}）是主要杠杆点；"
         f"若 CTR 正常但 CVR 偏低，问题在落地页/承接，而非素材。"
     )
 

@@ -46,7 +46,7 @@ class CustomerAdapter(BaseAdapter):
     @classmethod
     def normalize(cls, r: Dict[str, Any]) -> CustomerProfile:
         return CustomerProfile(
-            customer_id=r["cust_id"], name=r["company"], company=r["company"],
+            customer_id=r["cust_id"], name=r["name"], company=r["company"],
             industry=r["industry"], tier=r["tier"], owner=r["owner"],
             wecom_id=r["wecom"], account_status=r["status"],
             joined_at=r["joined"], lifecycle_stage=r["stage"],
