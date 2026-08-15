@@ -65,6 +65,10 @@ CREATE TABLE IF NOT EXISTS badcases (
     object_name TEXT, symptom TEXT, root_cause TEXT, fix TEXT,
     impact_value REAL, is_archived INTEGER
 );
+CREATE TABLE IF NOT EXISTS agent_logs (
+    run_id TEXT PRIMARY KEY, ts TEXT, user_query TEXT, intent TEXT,
+    steps TEXT, answer TEXT, tool_count INTEGER, engine TEXT
+);
 """
 
 
@@ -460,3 +464,20 @@ def get_badcases(conn, customer_id=None) -> List[BadCase]:
     rows = conn.execute(sql, args).fetchall()
     cols = [d[0] for d in conn.execute("SELECT * FROM badcases").description]
     return [BadCase(**dict(zip(cols, r))) for r in rows]
+
+
+def log_agent_run(conn, run_id: str, ts: str, user_query: str, intent: str,
+                  steps: list, answer: str, tool_count: int, engine: str) -> None:
+    """持久化一次 agent 运行的完整轨迹（意图→工具→观察→回答），满足可观测性。"""
+    import json
+    conn.execute(
+        "INSERT OR REPLACE INTO agent_logs VALUES (?,?,?,?,?,?,?,?)",
+        (run_id, ts, user_query, intent, json.dumps(steps, ensure_ascii=False),
+         answer, tool_count, engine))
+    conn.commit()
+
+
+def recent_agent_runs(conn, limit: int = 10) -> List[tuple]:
+    return conn.execute(
+        "SELECT run_id, ts, user_query, intent, tool_count, engine "
+        "FROM agent_logs ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()

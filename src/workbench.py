@@ -610,3 +610,62 @@ def render_content(conn, f):
     st.dataframe(df, width='stretch', hide_index=True,
                  column_config={"素材": st.column_config.TextColumn(width=240)})
     st.caption(f"共 {len(df)} 篇笔记。互动率健康线 ~5%；绑定 CTR<2% 的素材建议重做封面标题（见 Badcase 库）。")
+
+
+# --------------------------- 💬 AI 助手（Agent 编排层） ---------------------------
+def render_agent(conn, f):
+    """对话式入口：自然语言 → 意图识别 → 调用后端工具(DB) → 多步编排 → 可观测轨迹。"""
+    st.markdown(H3.format(text="💬 AI 助手 · AdPilot Agent"), unsafe_allow_html=True)
+    st.caption("非纯前端：底层是 Python 后端 + SQLite + 工具调用工作流 + 业务语义 System Prompt。"
+               "输入自然语言，agent 会自主选工具、查真实数据、给出可执行的复盘结论。")
+
+    engine = "OpenAI" if os.environ.get("OPENAI_API_KEY") else "Mock（基于真实数据调度）"
+    st.info(f"🧠 引擎：{engine} ｜ 业务本体：小红书线索经营（CPL / 留资 / 加微 / 私信漏斗）")
+
+    # 示例问句
+    examples = [
+        "帮我复盘一下 C001",
+        "C003 这周有哪些异常预警？",
+        "C005 的高成本计划有哪些，怎么优化？",
+        "C002 的 CPL 在行业里算什么水平？",
+        "客户 C004 在其他平台投了多少？",
+        "C007 整体情况怎么样？",
+    ]
+    cols = st.columns(3)
+    for i, ex in enumerate(examples):
+        if cols[i % 3].button(ex, key=f"ex_{i}"):
+            st.session_state["agent_input"] = ex
+
+    q = st.text_input("向 AdPilot 提问（可指定客户编号，如 C001）",
+                      value=st.session_state.get("agent_input", ""),
+                      key="agent_q", placeholder="例如：帮我复盘 C001，并看看它的异常预警")
+
+    if st.button("🚀 运行 Agent", key="agent_run") and q.strip():
+        cust = None
+        for r in conn.execute("SELECT customer_id, name FROM customers").fetchall():
+            if r[0].lower() in q.lower() or r[1] in q:
+                cust = r[0]; break
+        default_cid = cust or "C001"
+        with st.spinner("Agent 正在编排工具调用…"):
+            import agent as agent_mod
+            result = agent_mod.run_agent(conn, q, default_cid=default_cid)
+
+        # 轨迹（可观测）
+        with st.expander("🔍 Agent 运行轨迹（意图 → 工具 → 观察）", expanded=True):
+            st.markdown(f"**识别意图**：`{result['intent']}` ｜ **调用工具数**：{result['tool_count']} ｜ **引擎**：{result['engine']}")
+            for i, s in enumerate(result["steps"], 1):
+                st.markdown(f"**Step {i} · {s['tool']}**  `参数: {s['args']}`")
+                st.markdown(f"&nbsp;&nbsp;↳ 观察：{s['observation']}")
+
+        # 回答
+        st.markdown("### 📌 Agent 回答")
+        st.markdown(result["answer"])
+
+    # 历史运行（来自 DB agent_logs，证明可观测）
+    with st.expander("🗂 历史运行记录（持久化于 agent_logs）"):
+        runs = dbm.recent_agent_runs(conn, 10)
+        if not runs:
+            st.caption("暂无运行记录。")
+        else:
+            for rid, ts, query, intent, tcount, eng in runs:
+                st.markdown(f"`{ts}` ｜ `{eng}` ｜ 意图 `{intent}` ｜ 工具 {tcount} ｜ {query}")
