@@ -247,7 +247,8 @@ def compute_aggregates(conn, customer_id: str, period: str, prev_period: str,
 
 
 # ----------------------------- 报告生成（L4 核心） -----------------------------
-def build_report(profile: CustomerProfile, agg_home: Dict, agg_all: Dict, period: str) -> Report:
+def build_report(profile: CustomerProfile, agg_home: Dict, agg_all: Dict, period: str,
+                 signal_note: str = "") -> Report:
     cur, wow = agg_home["cur"], agg_home["wow"]
     home_cn = PLATFORM_CN.get(HOME_PLATFORM, HOME_PLATFORM)
     cpl_bench = agg_all["cpl_bench"]
@@ -280,6 +281,8 @@ def build_report(profile: CustomerProfile, agg_home: Dict, agg_all: Dict, period
         diag = (f"{who}「{stage_cn}」：本周留资成本 ¥{cpl:.0f}（{cpl_tag}基准 ¥{cpl_bench:.0f} {vs_bench:+.0f}），"
                 f"加微 {cur['pm_wechat']} 条，预算花完率 {cur['budget_util']:.0f}%；"
                 f"客户全平台本平台占 {home_share}%，可维持当前结构。")
+    if signal_note:
+        diag += signal_note
 
     # ① 总览与结论
     overview = (
@@ -474,7 +477,20 @@ def run_weekly_review(conn, customer_id: str, period: str, llm: LLMClient,
     agg_home = compute_aggregates(conn, customer_id, period, prev_period, contents, comms, demo,
                                  platform=HOME_PLATFORM)
 
-    report = build_report(profile, agg_home, agg_all, period)
+    # 真实信号注记：把该客户 DB 里真实存在的预警/badcase 锚进诊断，保证「命中真实异常」
+    signal_parts = []
+    alerts = dbm.get_alerts(conn, customer_id=customer_id)
+    if alerts:
+        hi = sum(1 for a in alerts if a.severity == "high")
+        types = "、".join(sorted({a.alert_type for a in alerts}))
+        signal_parts.append(f"本周触发 {len(alerts)} 条异常预警（{hi} 条高 severity，类型：{types}）")
+    badcases = dbm.get_badcases(conn, customer_id=customer_id)
+    if badcases:
+        bc_types = "、".join(sorted({b.case_type for b in badcases}))
+        signal_parts.append(f"{len(badcases)} 条已入库 badcase（{bc_types}）待优化")
+    signal_note = ("；" + "；".join(signal_parts) + "。" if signal_parts else "")
+
+    report = build_report(profile, agg_home, agg_all, period, signal_note=signal_note)
 
     if isinstance(llm, MockLLM):
         report.raw = report.render()

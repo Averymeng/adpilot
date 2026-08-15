@@ -669,3 +669,72 @@ def render_agent(conn, f):
         else:
             for rid, ts, query, intent, tcount, eng in runs:
                 st.markdown(f"`{ts}` ｜ `{eng}` ｜ 意图 `{intent}` ｜ 工具 {tcount} ｜ {query}")
+
+
+# --------------------------- 🧪 报告评测与版本（评估-优化闭环） ---------------------------
+def render_eval(conn, f):
+    """评估器给报告打分 → 低分自动给出改写方向 → 版本留存 / 回测对比。"""
+    st.markdown(H3.format(text="🧪 报告评测与版本 · 评估-优化闭环"), unsafe_allow_html=True)
+    st.caption("对标 xhslink 分享的「评估器打分 → 低分归因改写 → 版本留存」逻辑："
+               "每版复盘报告都经评分器校验（结构/数字/命中真实异常/行动/对标），低分自动给出改写方向。")
+
+    cids = [r[0] for r in conn.execute("SELECT customer_id FROM customers ORDER BY customer_id").fetchall()]
+    cid_options = [f"{r[0]} · {dbm.get_customer(conn, r[0]).name}" for r in [(c,) for c in cids]]
+    sel = st.selectbox("选择复盘对象", cid_options, key="ev_sel", label_visibility="collapsed")
+    cid = sel.split(" · ")[0]
+    period = f["week"]
+
+    if st.button("🔄 生成并评测本报告", key="ev_run"):
+        with st.spinner("生成报告 + 评估器打分中…"):
+            import evaluator as ev_mod
+            res = ev_mod.evaluate_and_version(conn, cid, period)
+            ev = res["eval"]
+
+        # 分数卡
+        score = ev["score"]
+        color = "🟢" if score >= 85 else ("🟡" if score >= 70 else "🔴")
+        st.markdown(f"### {color} 评分 **{score}/100** · {ev['verdict']}")
+        if ev["hit_detail"]:
+            st.success(f"✅ 命中真实信号：{ev['hit_detail']}")
+
+        # 检查清单
+        st.markdown("**评估维度**")
+        for k, v in ev["checks"].items():
+            st.markdown(f"{'✅' if v else '❌'} {k}")
+        if ev["notes"]:
+            with st.expander("⚠️ 细节提示"):
+                for n in ev["notes"]:
+                    st.markdown(f"• {n}")
+
+        # 低分 → 优化建议（闭环核心）
+        if ev["failed"]:
+            st.markdown("### 🛠 优化建议（低分归因改写方向）")
+            st.info(ev["suggestion"])
+            if st.button("🔁 按建议重测并对比分数", key="ev_rerun"):
+                with st.spinner("重新生成并评测…"):
+                    res2 = ev_mod.evaluate_and_version(conn, cid, period)
+                    ev2 = res2["eval"]
+                delta = ev2["score"] - score
+                st.markdown(f"重测分数 **{ev2['score']}/100**（{'↑' if delta>=0 else '↓'} {abs(delta)}）")
+                if ev2["failed"]:
+                    st.markdown("仍需优化：" + "、".join(ev2["failed"]))
+                else:
+                    st.success("已达标 ✅")
+
+        # 报告预览
+        with st.expander("📄 本版报告全文", expanded=False):
+            st.markdown(res["report"].render())
+
+    # 版本历史（回测对比）
+    with st.expander("🗂 版本历史（report_versions）", expanded=True):
+        vers = dbm.list_report_versions(conn, customer_id=cid, limit=15)
+        if not vers:
+            st.caption("该客户暂无报告版本，先点上方「生成并评测」生成第一版。")
+        else:
+            rows = [{"版本": v[0][:14], "周期": v[2], "时间": v[3], "分数": v[4],
+                     "结论": v[5], "引擎": v[6]} for v in vers]
+            st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
+            sc = [v[4] for v in vers]
+            if len(sc) >= 2:
+                st.caption(f"近 {len(sc)} 版分数走势：{' → '.join(str(s) for s in reversed(sc))}（趋势："
+                           f"{'上升 ↑' if sc[0] > sc[-1] else '下降 ↓' if sc[0] < sc[-1] else '持平 →'}）")

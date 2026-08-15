@@ -69,6 +69,11 @@ CREATE TABLE IF NOT EXISTS agent_logs (
     run_id TEXT PRIMARY KEY, ts TEXT, user_query TEXT, intent TEXT,
     steps TEXT, answer TEXT, tool_count INTEGER, engine TEXT
 );
+CREATE TABLE IF NOT EXISTS report_versions (
+    version_id TEXT PRIMARY KEY, customer_id TEXT, period TEXT, ts TEXT,
+    diagnosis TEXT, report_text TEXT, score INTEGER, checklist TEXT, verdict TEXT,
+    engine TEXT
+);
 """
 
 
@@ -481,3 +486,26 @@ def recent_agent_runs(conn, limit: int = 10) -> List[tuple]:
     return conn.execute(
         "SELECT run_id, ts, user_query, intent, tool_count, engine "
         "FROM agent_logs ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+
+
+def save_report_version(conn, vid: str, customer_id: str, period: str, ts: str,
+                        diagnosis: str, report_text: str, score: int,
+                        checklist: dict, verdict: str, engine: str) -> None:
+    """留存每一版复盘报告 + 评估打分，支持版本管理与回测对比。"""
+    import json
+    conn.execute(
+        "INSERT OR REPLACE INTO report_versions VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (vid, customer_id, period, ts, diagnosis, report_text, score,
+         json.dumps(checklist, ensure_ascii=False), verdict, engine))
+    conn.commit()
+
+
+def list_report_versions(conn, customer_id: str = None, limit: int = 20) -> List[tuple]:
+    sql = ("SELECT version_id, customer_id, period, ts, score, verdict, engine "
+           "FROM report_versions")
+    args = []
+    if customer_id:
+        sql += " WHERE customer_id=?"; args.append(customer_id)
+    sql += " ORDER BY ts DESC LIMIT ?"
+    args.append(limit)
+    return conn.execute(sql, args).fetchall()
